@@ -19,6 +19,11 @@ class ChargeAbort(Exception):
     """Nabíjanie bezpečne prerušené (výstup je vypnutý)."""
 
 
+def say(psu, *args):
+    """Výpis do výstupu skriptu v UI (print z knižnice by išiel len do konzoly servera)."""
+    getattr(psu, "log", print)(*args)
+
+
 def fmt_dur(sec):
     h, r = divmod(int(sec), 3600)
     m, s = divmod(r, 60)
@@ -57,8 +62,8 @@ def cccv_charge(psu, v_max, i_charge, i_term, timeout_h=8.0, *, v_min=0.0, prech
     log_name    názov CSV logu (None = nelogovať)
     """
     _check_limits(v_max, i_charge)
-    print(f"=== Nabíjanie: {name} ===")
-    print(f"CV {v_max:.2f} V, CC {i_charge:.3f} A, ukončenie pri {i_term:.3f} A, limit {timeout_h:g} h"
+    say(psu, f"=== Nabíjanie: {name} ===")
+    say(psu, f"CV {v_max:.2f} V, CC {i_charge:.3f} A, ukončenie pri {i_term:.3f} A, limit {timeout_h:g} h"
           + (f", max {ah_max:g} Ah" if ah_max else ""))
 
     v, i, st = probe_battery(psu, v_max)
@@ -68,7 +73,7 @@ def cccv_charge(psu, v_max, i_charge, i_term, timeout_h=8.0, *, v_min=0.0, prech
     if v < v_min:
         psu.off()
         raise ChargeAbort(f"Napätie batérie {v:.2f} V je pod minimom {v_min:.2f} V – skontroluj polaritu, počet článkov alebo stav batérie")
-    print(f"Batéria: {v:.2f} V")
+    say(psu, f"Batéria: {v:.2f} V")
 
     if log_name:
         psu.log_start(log_name, interval)
@@ -77,7 +82,7 @@ def cccv_charge(psu, v_max, i_charge, i_term, timeout_h=8.0, *, v_min=0.0, prech
     ah = 0.0
     try:
         if precharge_v and precharge_i and v < precharge_v:
-            print(f"Prednabíjanie prúdom {precharge_i:.3f} A do {precharge_v:.2f} V …")
+            say(psu, f"Prednabíjanie prúdom {precharge_i:.3f} A do {precharge_v:.2f} V …")
             psu.set_i(precharge_i)
             while True:
                 psu.wait(interval)
@@ -89,7 +94,7 @@ def cccv_charge(psu, v_max, i_charge, i_term, timeout_h=8.0, *, v_min=0.0, prech
                     break
                 if now - t0 > 3600:
                     raise ChargeAbort("Prednabíjanie trvá viac ako 1 h – batéria je pravdepodobne poškodená")
-            print(f"[{fmt_dur(now - t0)}] prednabité na {v:.2f} V")
+            say(psu, f"[{fmt_dur(now - t0)}] prednabité na {v:.2f} V")
 
         psu.set_i(i_charge)
         phase = "CC"
@@ -106,31 +111,31 @@ def cccv_charge(psu, v_max, i_charge, i_term, timeout_h=8.0, *, v_min=0.0, prech
                 raise ChargeAbort("Výstup zdroja sa vypol (OCP/OVP alebo ručne)")
             new_phase = "CV" if st["cv"] else "CC"
             if new_phase != phase:
-                print(f"[{fmt_dur(el)}] {phase} → {new_phase} pri {v:.2f} V, {i:.3f} A, nabité {ah:.3f} Ah")
+                say(psu, f"[{fmt_dur(el)}] {phase} → {new_phase} pri {v:.2f} V, {i:.3f} A, nabité {ah:.3f} Ah")
                 phase = new_phase
             below = below + 1 if (phase == "CV" and i <= i_term) else 0
             if below >= term_count:
-                print(f"[{fmt_dur(el)}] HOTOVO – prúd klesol pod {i_term:.3f} A")
+                say(psu, f"[{fmt_dur(el)}] HOTOVO – prúd klesol pod {i_term:.3f} A")
                 break
             if el > timeout_h * 3600:
                 raise ChargeAbort(f"Časový limit {timeout_h:g} h – nabíjanie prerušené (nabité {ah:.3f} Ah)")
             if ah_max and ah > ah_max:
                 raise ChargeAbort(f"Prekročený limit kapacity {ah_max:g} Ah – nabíjanie prerušené")
             if el - last_report >= report_every:
-                print(f"[{fmt_dur(el)}] {phase}  U={v:.2f} V  I={i:.3f} A  nabité {ah:.3f} Ah")
+                say(psu, f"[{fmt_dur(el)}] {phase}  U={v:.2f} V  I={i:.3f} A  nabité {ah:.3f} Ah")
                 last_report = el
     finally:
         psu.off()
         if log_name:
             psu.log_stop()
-    print(f"Celkom nabité {ah:.3f} Ah za {fmt_dur(time.time() - t0)}")
+    say(psu, f"Celkom nabité {ah:.3f} Ah za {fmt_dur(time.time() - t0)}")
     return ah
 
 
 def float_stage(psu, v_float, i_max, hours, *, interval=5.0, report_every=300, log_name=None):
     """Udržiavacie (float) nabíjanie konštantným napätím po zadaný čas [h]. Vráti nabité Ah."""
     _check_limits(v_float, i_max)
-    print(f"=== Float {v_float:.2f} V, max {i_max:.3f} A, {hours:g} h ===")
+    say(psu, f"=== Float {v_float:.2f} V, max {i_max:.3f} A, {hours:g} h ===")
     psu.off()
     psu.set_i(i_max)
     psu.set_v(v_float)
@@ -152,13 +157,13 @@ def float_stage(psu, v_float, i_max, hours, *, interval=5.0, report_every=300, l
             if el >= hours * 3600:
                 break
             if el - last_report >= report_every:
-                print(f"[{fmt_dur(el)}] float  U={psu.vout:.2f} V  I={i:.3f} A  ({ah:.3f} Ah)")
+                say(psu, f"[{fmt_dur(el)}] float  U={psu.vout:.2f} V  I={i:.3f} A  ({ah:.3f} Ah)")
                 last_report = el
     finally:
         psu.off()
         if log_name:
             psu.log_stop()
-    print(f"Float ukončený, dodané {ah:.3f} Ah")
+    say(psu, f"Float ukončený, dodané {ah:.3f} Ah")
     return ah
 
 
@@ -178,7 +183,7 @@ def nimh_charge(psu, cells, i_charge, *, v_cell_max=1.60, dv_per_cell=0.005, bla
     v_max = cells * v_cell_max
     _check_limits(v_max, i_charge)
     dv = cells * dv_per_cell
-    print(f"=== Nabíjanie: {name}, {cells} čl., CC {i_charge:.3f} A, −ΔV {dv * 1000:.0f} mV, strop {v_max:.2f} V ===")
+    say(psu, f"=== Nabíjanie: {name}, {cells} čl., CC {i_charge:.3f} A, −ΔV {dv * 1000:.0f} mV, strop {v_max:.2f} V ===")
     v, i, st = probe_battery(psu, v_max)
     if st["cv"] and i < 0.01:
         psu.off()
@@ -186,7 +191,7 @@ def nimh_charge(psu, cells, i_charge, *, v_cell_max=1.60, dv_per_cell=0.005, bla
     if v < cells * v_min_cell:
         psu.off()
         raise ChargeAbort(f"Napätie {v:.2f} V je pod {cells * v_min_cell:.2f} V – zlý počet článkov alebo poškodená batéria")
-    print(f"Batéria: {v:.2f} V ({v / cells:.3f} V/čl.)")
+    say(psu, f"Batéria: {v:.2f} V ({v / cells:.3f} V/čl.)")
     if log_name:
         psu.log_start(log_name, interval)
     psu.set_i(i_charge)
@@ -226,11 +231,11 @@ def nimh_charge(psu, cells, i_charge, *, v_cell_max=1.60, dv_per_cell=0.005, bla
                 reason = f"limit kapacity {ah_max:g} Ah"
                 break
             if el - last_report >= report_every:
-                print(f"[{fmt_dur(el)}] U={v:.2f} V ({v / cells:.3f}/čl.)  I={i:.3f} A  vrchol {peak:.3f} V  {ah:.3f} Ah")
+                say(psu, f"[{fmt_dur(el)}] U={v:.2f} V ({v / cells:.3f}/čl.)  I={i:.3f} A  vrchol {peak:.3f} V  {ah:.3f} Ah")
                 last_report = el
-        print(f"[{fmt_dur(el)}] KONIEC – {reason}; nabité {ah:.3f} Ah")
+        say(psu, f"[{fmt_dur(el)}] KONIEC – {reason}; nabité {ah:.3f} Ah")
         if i_trickle and trickle_min:
-            print(f"Dobíjanie {i_trickle:.3f} A po {trickle_min:g} min …")
+            say(psu, f"Dobíjanie {i_trickle:.3f} A po {trickle_min:g} min …")
             psu.set_i(i_trickle)
             t1 = time.time()
             while time.time() - t1 < trickle_min * 60:
@@ -240,5 +245,5 @@ def nimh_charge(psu, cells, i_charge, *, v_cell_max=1.60, dv_per_cell=0.005, bla
         psu.off()
         if log_name:
             psu.log_stop()
-    print(f"Celkom nabité {ah:.3f} Ah za {fmt_dur(time.time() - t0)}")
+    say(psu, f"Celkom nabité {ah:.3f} Ah za {fmt_dur(time.time() - t0)}")
     return ah
