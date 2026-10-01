@@ -212,9 +212,9 @@ class ScriptRunner:
     def start(self, name, code):
         with self.lock:
             if self.running:
-                raise RuntimeError("Už beží iný skript")
+                raise RuntimeError("Another script is already running")
             if not self.ctl.dev.connected:
-                raise RuntimeError("Zdroj nie je pripojený")
+                raise RuntimeError("PSU is not connected")
             self.stop_event.clear()
             self.name = name
             self.started = time.time()
@@ -241,7 +241,7 @@ class ScriptRunner:
             "time": tmod,
             "math": math,
         }
-        self.ctl.events.add(f"Skript '{self.name}' spustený")
+        self.ctl.events.add(f"Script '{self.name}' started")
         # skripty môžu importovať knižnice zo scripts/ (lib_*.py); pri každom behu sa načítajú nanovo
         sdir = getattr(self.ctl, "scripts_dir", None)
         if sdir and sdir not in sys.path:
@@ -251,15 +251,15 @@ class ScriptRunner:
         try:
             exec(compile(code, f"<{self.name}>", "exec"), env)
             self.status = "done"
-            self.emit("--- skript skončil ---")
+            self.emit("--- script finished ---")
         except ScriptStopped:
             self.status = "stopped"
-            self.emit("--- skript zastavený ---")
+            self.emit("--- script stopped ---")
             self._safe_off(psu)
         except Exception:  # noqa: BLE001
             self.status = "error"
             self.error = traceback.format_exc(limit=-3)
-            self.emit("CHYBA:\n" + self.error)
+            self.emit("ERROR:\n" + self.error)
             self._safe_off(psu)
         finally:
             self.ctl.events.add(f"Skript '{self.name}' – {self.status}")
@@ -269,6 +269,6 @@ class ScriptRunner:
         if psu.safe_off:
             try:
                 self.ctl.dev.output(False)
-                self.emit("Výstup vypnutý (safe_off)")
+                self.emit("Output switched off (safe_off)")
             except Exception as e:  # noqa: BLE001
-                self.emit(f"Nepodarilo sa vypnúť výstup: {e}")
+                self.emit(f"Could not switch off the output: {e}")

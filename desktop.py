@@ -33,9 +33,9 @@ def free_port():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--device", default=None)
-    ap.add_argument("--port", type=int, default=0, help="port servera (0 = náhodný voľný)")
-    ap.add_argument("--browser", action="store_true", help="otvoriť v prehliadači namiesto natívneho okna")
-    ap.add_argument("--server", action="store_true", help="len spustiť server, nič neotvárať")
+    ap.add_argument("--port", type=int, default=0, help="server port (0 = random free port)")
+    ap.add_argument("--browser", action="store_true", help="open in the browser instead of a native window")
+    ap.add_argument("--server", action="store_true", help="only run the server, open nothing")
     ap.add_argument("--no-autoconnect", action="store_true")
     a = ap.parse_args()
     _redirect_output()

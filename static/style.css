@@ -20,7 +20,8 @@ button,input,select,textarea{font:inherit}
 .logo{font-weight:900;font-size:22px;letter-spacing:.06em;color:#fff;background:#0d6ea8;padding:2px 10px;border-radius:4px;font-style:italic}
 .idn{font-size:12px;color:var(--muted)}
 .conn{display:flex;align-items:center;gap:8px}
-.conn select{background:#1a1b1e;color:var(--text);border:1px solid #000;border-radius:4px;padding:5px 8px;max-width:260px}
+.conn select{background:#1a1b1e;color:var(--text);border:1px solid #000;border-radius:4px;padding:5px 8px}
+#portSel{min-width:260px;max-width:400px}
 .dot{width:12px;height:12px;border-radius:50%;background:#444;display:inline-block;box-shadow:0 0 0 2px #000 inset}
 .dot.on{background:var(--ok);box-shadow:0 0 8px var(--ok)}
 .dot.err{background:var(--danger);box-shadow:0 0 8px var(--danger)}

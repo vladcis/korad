@@ -71,12 +71,12 @@ class Korad:
                         self.port = p
                         self.idn = idn
                         return idn
-                    errors.append(f"{p}: neodpovedá")
+                    errors.append(f"{p}: no response")
                     s.close()
                 except Exception as e:  # noqa: BLE001
                     errors.append(f"{p}: {e}")
                 self.ser = None
-            raise KoradError("Zdroj nenájdený. " + ("; ".join(errors) if errors else "Žiadne sériové porty."))
+            raise KoradError("PSU not found. " + ("; ".join(errors) if errors else "No serial ports."))
 
     def close(self):
         with self.lock:
@@ -103,7 +103,7 @@ class Korad:
     def _tx(self, cmd, nbytes=0, until_timeout=False):
         with self.lock:
             if not self.connected:
-                raise KoradError("Zdroj nie je pripojený")
+                raise KoradError("PSU is not connected")
             wait = self.GAP - (time.monotonic() - self._last_tx)
             if wait > 0:
                 time.sleep(wait)
@@ -121,7 +121,7 @@ class Korad:
                     data = b""
             except (serial.SerialException, OSError) as e:
                 self.close()
-                raise KoradError(f"Chyba sériového portu: {e}") from e
+                raise KoradError(f"Serial port error: {e}") from e
             finally:
                 self._last_tx = time.monotonic()
             resp = data.decode("ascii", "replace")
@@ -146,7 +146,7 @@ class Korad:
             with self.lock:
                 if self.connected:
                     self._drain()
-            raise KoradError(f"Neplatná odpoveď na {what}: {s!r}") from e
+            raise KoradError(f"Invalid response to {what}: {s!r}") from e
 
     # ---------- čítanie ----------
     def idn_query(self):
@@ -187,7 +187,7 @@ class Korad:
     def status(self):
         b = self._tx("STATUS?", 1)
         if not b:
-            raise KoradError("STATUS? bez odpovede")
+            raise KoradError("STATUS? no response")
         v = ord(b[0])
         return {
             "cv": bool(v & 0x01),
@@ -224,11 +224,11 @@ class Korad:
     def save(self, slot):
         slot = int(slot)
         if not 1 <= slot <= 5:
-            raise KoradError("Pamäť musí byť 1–5")
+            raise KoradError("Memory slot must be 1–5")
         self._tx(f"SAV{slot}")
 
     def recall(self, slot):
         slot = int(slot)
         if not 1 <= slot <= 5:
-            raise KoradError("Pamäť musí byť 1–5")
+            raise KoradError("Memory slot must be 1–5")
         self._tx(f"RCL{slot}")

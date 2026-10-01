@@ -11,15 +11,15 @@ def sequence_code(steps, start=1, end=None, cycles=1):
         except (TypeError, ValueError):
             continue
     if not clean:
-        raise ValueError("Sekvencia nemá žiadne platné kroky")
+        raise ValueError("The sequence has no valid steps")
     start = max(1, int(start or 1))
     end = min(len(clean), int(end or len(clean)))
     if end < start:
-        raise ValueError("Koncový bod je pred začiatočným")
+        raise ValueError("End point is before start point")
     cycles = max(0, int(cycles or 0))
-    return f'''# Programovateľný test – vygenerované
+    return f'''# Programmable test – generated
 steps = {json.dumps(clean)}
-START, END, CYCLES = {start}, {end}, {cycles}   # CYCLES 0 = nekonečne
+START, END, CYCLES = {start}, {end}, {cycles}   # CYCLES 0 = infinite
 c = 0
 psu.on()
 while CYCLES == 0 or c < CYCLES:
@@ -29,7 +29,7 @@ while CYCLES == 0 or c < CYCLES:
         psu.set_v(v)
         psu.set_i(i)
         psu.wait(t)
-        print(f"cyklus {{c}} krok {{k}}: {{v:.2f}} V / {{i:.3f}} A / {{t:g}} s -> U={{psu.vout:.2f}} V I={{psu.iout:.3f}} A")
+        print(f"cycle {{c}} step {{k}}: {{v:.2f}} V / {{i:.3f}} A / {{t:g}} s -> U={{psu.vout:.2f}} V I={{psu.iout:.3f}} A")
 psu.off()
-print("sekvencia dokončená")
+print("sequence finished")
 '''

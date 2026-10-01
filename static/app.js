@@ -20,8 +20,8 @@ function toast(msg, ok = false) {
   clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, ok ? 1800 : 4000);
 }
 function guard(p) { return p.catch(e => toast(e.message)); }
-const fmtT = t => new Date(t * 1000).toLocaleTimeString('sk-SK');
-const fmtDT = t => new Date(t * 1000).toLocaleString('sk-SK');
+const fmtT = t => new Date(t * 1000).toLocaleTimeString('en-GB');
+const fmtDT = t => new Date(t * 1000).toLocaleString('en-GB');
 
 // ---------------------------------------------------------------- 7-segment
 const SEG = {
@@ -36,7 +36,7 @@ const GEO = {
   f: 'M8,6 l-6,-3 v30 l6,4 l4,-4 v-23 z', e: 'M8,41 l-6,-4 v30 l6,-3 l4,-4 v-15 z',
 };
 function sevenSeg(text, digits) {
-  // rozdelí text na znaky, bodka sa priradí k predchádzajúcemu znaku
+  // split text into characters; a dot attaches to the previous character
   const cells = [];
   for (const ch of text) {
     if (ch === '.' && cells.length) cells[cells.length - 1].dp = true;
@@ -64,13 +64,13 @@ function setSeg(id, text, digits) {
   document.getElementById(id).innerHTML = sevenSeg(text, digits);
 }
 
-// ---------------------------------------------------------------- stav UI
+// ---------------------------------------------------------------- UI state
 const ui = { lock: false, mA: false, memSel: 0, editingV: false, editingI: false, lastState: null };
 const chart = { data: [], win: 60, showP: false };
 
 function setTog(id, on, label) {
   const b = $('#' + id); b.classList.toggle('on', !!on);
-  const st = b.querySelector('.st'); if (st) st.textContent = label || (on ? 'ZAP' : 'VYP');
+  const st = b.querySelector('.st'); if (st) st.textContent = label || (on ? 'ON' : 'OFF');
 }
 function led(id, on, green) { const e = $('#' + id); e.classList.toggle('on', !!on); e.classList.toggle('green', !!green); }
 
@@ -78,12 +78,12 @@ function applyState(s) {
   ui.lastState = s;
   const conn = s.connected;
   $('#connDot').className = 'dot ' + (conn ? (s.error ? 'err' : 'on') : 'off');
-  $('#idn').textContent = conn ? `${s.idn} · ${s.port}` : (s.error || 'nepripojené');
+  $('#idn').textContent = conn ? `${s.idn} · ${s.port}` : (s.error || 'not connected');
   $('#btnConnect').hidden = conn; $('#btnDisconnect').hidden = !conn;
   $('#dispErr').textContent = s.error || '';
 
   if (!conn) { setSeg('segV', '----', 4); setSeg('segI', '----', 4); setSeg('segP', '-OFF', 4); return; }
-  // ako reálny displej: pri vypnutom výstupe nastavené hodnoty, pri zapnutom merané
+  // like the real display: set values while the output is off, measured values while on
   const dv = s.output ? s.vout : s.vset, di = s.output ? s.iout : s.iset;
   setSeg('segV', dv.toFixed(2).padStart(5, '0'), 4);
   if (ui.mA && di < 1) setSeg('segI', (di * 1000).toFixed(0), 4); else setSeg('segI', di.toFixed(3), 4);
@@ -92,7 +92,7 @@ function applyState(s) {
   led('ledCV', s.output && s.mode === 'CV'); led('ledCC', s.output && s.mode === 'CC');
   led('ledON', s.output, true); led('ledOCP', s.ocp); led('ledOVP', s.ovp); led('ledBEEP', s.beep);
   led('ledLOCK', ui.lock || ui.scriptRunning);
-  $('#btnOUT').classList.toggle('on', s.output); $('#btnOUT').textContent = s.output ? 'VÝSTUP: ON  (vypnúť)' : 'VÝSTUP: OFF  (zapnúť)';
+  $('#btnOUT').classList.toggle('on', s.output); $('#btnOUT').textContent = s.output ? 'OUTPUT ON  ·  turn OFF' : 'OUTPUT OFF  ·  turn ON';
   setTog('btnOCP', s.ocp); setTog('btnOVP', s.ovp); setTog('btnBEEP', s.beep);
   if (s.limits_supported !== false) {
     if (!ui.editingOCP && s.ocp_limit != null) $('#inOCP').value = s.ocp_limit.toFixed(3);
@@ -106,7 +106,7 @@ function applyState(s) {
   drawChart($('#chart'), chart.data.filter(d => d.t >= s.t - chart.win), { showP: chart.showP, keyT: 't' });
 }
 
-// ---------------------------------------------------------------- graf
+// ---------------------------------------------------------------- chart
 function drawChart(cv, data, opt) {
   const dpr = window.devicePixelRatio || 1;
   const W = cv.clientWidth, H = cv.height / (cv._dpr || 1) || 220;
@@ -115,13 +115,13 @@ function drawChart(cv, data, opt) {
   g.clearRect(0, 0, W, H);
   const L = 46, R = opt.showP ? 92 : 46, T = 10, B = 24, pw = W - L - R, ph = H - T - B;
   g.font = '11px system-ui'; g.fillStyle = '#777'; g.strokeStyle = '#26282d';
-  if (data.length < 2) { g.fillText('čakám na dáta…', L + 10, T + 20); return; }
+  if (data.length < 2) { g.fillText('waiting for data…', L + 10, T + 20); return; }
   const t0 = data[0].t, t1 = data[data.length - 1].t, span = Math.max(1, t1 - t0);
   const mx = (k, pad) => { let m = 0; for (const d of data) if (d[k] > m) m = d[k]; return m <= 0 ? pad : m * 1.1; };
   const vmax = mx('v', 1), imax = mx('i', 0.1), pmax = mx('p', 1);
   const X = t => L + (t - t0) / span * pw;
   const Y = (val, max) => T + ph - val / max * ph;
-  // mriežka
+  // grid
   for (let k = 0; k <= 4; k++) {
     const y = T + ph * k / 4; g.beginPath(); g.moveTo(L, y); g.lineTo(L + pw, y); g.stroke();
     g.fillStyle = '#ff6a3d'; g.textAlign = 'right'; g.fillText((vmax * (1 - k / 4)).toFixed(1), L - 4, y + 4);
@@ -155,10 +155,10 @@ function connectStream() {
   es.addEventListener('logger', e => onLoggerInfo(JSON.parse(e.data)));
   es.addEventListener('event', e => addEvent(JSON.parse(e.data)));
   es.addEventListener('cmd', e => addCmd(JSON.parse(e.data)));
-  es.onerror = () => { $('#connDot').className = 'dot err'; $('#idn').textContent = 'server nedostupný…'; };
+  es.onerror = () => { $('#connDot').className = 'dot err'; $('#idn').textContent = 'server unreachable…'; };
 }
 
-// ---------------------------------------------------------------- pripojenie
+// ---------------------------------------------------------------- connection
 async function loadPorts() {
   const j = await api('/ports');
   const sel = $('#portSel'); sel.innerHTML = '<option value="">(auto)</option>';
@@ -171,13 +171,13 @@ async function loadPorts() {
   if (j.baud) $('#baudSel').value = String(j.baud);
 }
 $('#portSel').onfocus = () => guard(loadPorts());
-$('#btnConnect').onclick = () => guard(api('/connect', 'POST', { port: $('#portSel').value, baud: +$('#baudSel').value }).then(j => toast('Pripojené: ' + j.idn, true)));
+$('#btnConnect').onclick = () => guard(api('/connect', 'POST', { port: $('#portSel').value, baud: +$('#baudSel').value }).then(j => toast('Connected: ' + j.idn, true)));
 $('#btnDisconnect').onclick = () => guard(api('/disconnect', 'POST'));
 
-// ---------------------------------------------------------------- ovládanie
+// ---------------------------------------------------------------- controls
 function locked() {
-  if (ui.scriptRunning) { toast('Beží skript – panel je zamknutý. Zastav ho tlačidlom Stop.'); return true; }
-  if (ui.lock) { toast('Ovládanie je zamknuté (LOCK)'); return true; }
+  if (ui.scriptRunning) { toast('A script is running – the panel is locked. Stop it with the Stop button.'); return true; }
+  if (ui.lock) { toast('Controls are locked (LOCK)'); return true; }
   return false;
 }
 function applyLocks() {
@@ -185,7 +185,7 @@ function applyLocks() {
   led('ledLOCK', lk);
   $('.controls').classList.toggle('locked', !!ui.scriptRunning);
   $('#scriptLock').hidden = !ui.scriptRunning;
-  setTog('btnLOCK', ui.lock, ui.scriptRunning ? 'SKRIPT' : undefined);
+  setTog('btnLOCK', ui.lock, ui.scriptRunning ? 'SCRIPT' : undefined);
 }
 $('#btnStopScript').onclick = () => guard(api('/scripts/stop', 'POST'));
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
@@ -211,25 +211,25 @@ $('#btnOVP').onclick = () => { if (locked()) return; guard(api('/ovp', 'POST', {
 $('#btnBEEP').onclick = () => { if (locked()) return; guard(api('/beep', 'POST', { on: !ui.lastState?.beep })); };
 $('#btnLOCK').onclick = () => { if (ui.scriptRunning) return locked(); ui.lock = !ui.lock; applyLocks(); };
 $('#btnMA').onclick = () => { ui.mA = !ui.mA; setTog('btnMA', ui.mA, ui.mA ? 'mA' : 'A'); segCache.segI = null; ui.lastState && applyState(ui.lastState); };
-// prahy OCP / OVP
+// OCP / OVP thresholds
 $('#inOCP').onfocus = () => ui.editingOCP = true; $('#inOVP').onfocus = () => ui.editingOVP = true;
 $('#inOCP').onblur = () => ui.editingOCP = false; $('#inOVP').onblur = () => ui.editingOVP = false;
-$('#inOCP').onchange = e => { if (locked()) return; guard(api('/limits', 'POST', { ocp: +e.target.value }).then(j => toast(`Prah OCP ${j.ocp_limit.toFixed(3)} A`, true))); };
-$('#inOVP').onchange = e => { if (locked()) return; guard(api('/limits', 'POST', { ovp: +e.target.value }).then(j => toast(`Prah OVP ${j.ovp_limit.toFixed(2)} V`, true))); };
+$('#inOCP').onchange = e => { if (locked()) return; guard(api('/limits', 'POST', { ocp: +e.target.value }).then(j => toast(`OCP threshold ${j.ocp_limit.toFixed(3)} A`, true))); };
+$('#inOVP').onchange = e => { if (locked()) return; guard(api('/limits', 'POST', { ovp: +e.target.value }).then(j => toast(`OVP threshold ${j.ovp_limit.toFixed(2)} V`, true))); };
 $('#inOCP').onkeydown = e => { if (e.key === 'Enter') e.target.blur(); };
 $('#inOVP').onkeydown = e => { if (e.key === 'Enter') e.target.blur(); };
 $$('.key.mem').forEach(b => b.onclick = async () => {
   if (locked()) return;
   const m = +b.dataset.m, save = $('#memSave').checked;
-  if (save && !confirm(`Uložiť aktuálne nastavenie do M${m}?`)) return;
+  if (save && !confirm(`Save current settings to M${m}?`)) return;
   await guard(api(`/memory/${m}/${save ? 'save' : 'recall'}`, 'POST').then(() => {
-    toast(save ? `Uložené do M${m}` : `Vyvolané M${m}`, true);
+    toast(save ? `Saved to M${m}` : `Recalled M${m}`, true);
     $('#memSave').checked = false; ui.memSel = m;
     $$('.mems .led-lbl').forEach(l => l.querySelector('.led').classList.toggle('on', +l.dataset.m === m));
   }));
 });
 
-// predvoľby U/I
+// V/A presets
 let presets = [];
 async function loadPresets() {
   presets = (await api('/presets')).items; renderPresets();
@@ -244,23 +244,23 @@ function renderPresets() {
       if ($('#presetSave').checked) {
         const s = ui.lastState; if (!s) return;
         presets[n] = { v: s.vset, i: s.iset }; $('#presetSave').checked = false;
-        await guard(api('/presets', 'PUT', { items: presets })); renderPresets(); toast(`Predvoľba ${n + 1} uložená`, true);
+        await guard(api('/presets', 'PUT', { items: presets })); renderPresets(); toast(`Preset ${n + 1} saved`, true);
       } else {
-        await guard(api(`/presets/${n}/apply`, 'POST').then(() => toast(`Nastavené ${p.v} V / ${p.i} A`, true)));
+        await guard(api(`/presets/${n}/apply`, 'POST').then(() => toast(`Set ${p.v} V / ${p.i} A`, true)));
       }
     };
     g.appendChild(b);
   });
 }
 
-// rýchle logovanie z panelu
+// quick logging from the panel
 $('#qlogBtn').onclick = () => {
   const info = ui.loggerInfo;
   if (info?.active) guard(api('/logs/stop', 'POST'));
   else guard(api('/logs/start', 'POST', { name: $('#qlogName').value, interval: +$('#logInt').value || 1 }));
 };
 
-// ---------------------------------------------------------------- taby
+// ---------------------------------------------------------------- tabs
 function showTab(name) { const t = $$('.tab').find(x => x.dataset.tab === name); if (t) t.onclick(); }
 $$('.tab').forEach(t => t.onclick = () => {
   $$('.tab').forEach(x => x.classList.remove('active')); t.classList.add('active');
@@ -272,7 +272,7 @@ $$('.tab').forEach(t => t.onclick = () => {
   if (t.dataset.tab === 'console') loadConsole();
 });
 
-// ---------------------------------------------------------------- skripty
+// ---------------------------------------------------------------- scripts
 const code = $('#code'), gutter = $('#gutter');
 let currentScript = null, dirty = false;
 function updateGutter() {
@@ -307,7 +307,7 @@ async function loadScripts() {
   onScriptEvent(j.runner, true);
 }
 async function openScript(name) {
-  if (dirty && !confirm('Neuložené zmeny zahodiť?')) return;
+  if (dirty && !confirm('Discard unsaved changes?')) return;
   const j = await guard(api('/scripts/' + encodeURIComponent(name)));
   if (!j) return;
   currentScript = j.name; code.value = j.code; dirty = false; updateGutter();
@@ -315,13 +315,13 @@ async function openScript(name) {
   $$('#scrList li').forEach(li => li.classList.toggle('active', li.firstChild.textContent === j.name));
 }
 async function saveScript() {
-  const name = $('#scrName').value.trim(); if (!name) return toast('Zadaj názov skriptu');
+  const name = $('#scrName').value.trim(); if (!name) return toast('Enter a script name');
   const j = await guard(api('/scripts/' + encodeURIComponent(name), 'PUT', { code: code.value }));
-  if (!j) return; currentScript = j.name; dirty = false; toast('Uložené ' + j.name, true); loadScripts();
+  if (!j) return; currentScript = j.name; dirty = false; toast('Saved ' + j.name, true); loadScripts();
 }
 async function runScript() {
   const name = $('#scrName').value.trim() || 'editor';
-  if (dirty || !currentScript) { /* spusti obsah editora bez uloženia */ }
+  if (dirty || !currentScript) { /* run editor contents without saving */ }
   $('#scrOut').textContent = '';
   await guard(api('/scripts/run', 'POST', { name, code: code.value }));
 }
@@ -330,13 +330,13 @@ $('#scrRun').onclick = runScript;
 $('#scrStop').onclick = () => guard(api('/scripts/stop', 'POST'));
 $('#scrClear').onclick = () => $('#scrOut').textContent = '';
 $('#scrNew').onclick = () => {
-  if (dirty && !confirm('Neuložené zmeny zahodiť?')) return;
-  currentScript = null; dirty = false; $('#scrName').value = 'novy';
-  code.value = '# Nový skript – objekt psu ovláda zdroj\npsu.set_v(5.0)\npsu.set_i(0.5)\npsu.on()\npsu.wait(2)\nprint("U =", psu.vout, "V  I =", psu.iout, "A")\npsu.off()\n';
+  if (dirty && !confirm('Discard unsaved changes?')) return;
+  currentScript = null; dirty = false; $('#scrName').value = 'new';
+  code.value = '# New script – the psu object controls the power supply\npsu.set_v(5.0)\npsu.set_i(0.5)\npsu.on()\npsu.wait(2)\nprint("U =", psu.vout, "V  I =", psu.iout, "A")\npsu.off()\n';
   updateGutter(); $$('#scrList li').forEach(li => li.classList.remove('active'));
 };
 $('#scrDelete').onclick = async () => {
-  if (!currentScript || !confirm(`Zmazať ${currentScript}?`)) return;
+  if (!currentScript || !confirm(`Delete ${currentScript}?`)) return;
   await guard(api('/scripts/' + encodeURIComponent(currentScript), 'DELETE'));
   currentScript = null; code.value = ''; dirty = false; updateGutter(); loadScripts();
 };
@@ -358,10 +358,10 @@ function onScriptEvent(d, initial) {
   const sp = $('#seqStatus'); sp.textContent = isSeq ? d.status : 'idle'; sp.className = 'pill ' + (isSeq ? d.status : '');
   $('#seqRun').disabled = running; $('#seqStop').disabled = !(running && isSeq);
   if (d.line) {
-    appendOut($('#scrOut'), `[${fmtT(d.line.t)}] ${d.line.line}`, d.line.line.startsWith('CHYBA') ? 'err' : '');
+    appendOut($('#scrOut'), `[${fmtT(d.line.t)}] ${d.line.line}`, d.line.line.startsWith('ERROR') ? 'err' : '');
     if (isSeq) {
-      appendOut($('#seqOut'), `[${fmtT(d.line.t)}] ${d.line.line}`, d.line.line.startsWith('CHYBA') ? 'err' : '');
-      const m = d.line.line.match(/krok (\d+):/);
+      appendOut($('#seqOut'), `[${fmtT(d.line.t)}] ${d.line.line}`, d.line.line.startsWith('ERROR') ? 'err' : '');
+      const m = d.line.line.match(/step (\d+):/);
       if (m) $$('#seqTable tbody tr').forEach((tr, k) => tr.classList.toggle('cur', k + 1 === +m[1]));
     }
   }
@@ -369,7 +369,7 @@ function onScriptEvent(d, initial) {
   if (initial && d.output) { $('#scrOut').textContent = ''; d.output.forEach(l => appendOut($('#scrOut'), `[${fmtT(l.t)}] ${l.line}`)); }
 }
 
-// ---------------------------------------------------------------- program (sekvencie)
+// ---------------------------------------------------------------- program (sequences)
 let currentSeq = null;
 function seqRows() {
   return $$('#seqTable tbody tr').map(tr => ({ v: +tr.querySelector('.sv').value, i: +tr.querySelector('.si').value, t: +tr.querySelector('.st').value }));
@@ -380,7 +380,7 @@ function seqRender(steps) {
     const tr = document.createElement('tr');
     tr.innerHTML = `<td>${k + 1}</td><td><input class="sv" type="number" step="0.01" min="0" max="30" value="${st.v}"></td>` +
       `<td><input class="si" type="number" step="0.001" min="0" max="5" value="${st.i}"></td>` +
-      `<td><input class="st" type="number" step="0.1" min="0" value="${st.t}"></td><td><button class="del" title="odstrániť">✕</button></td>`;
+      `<td><input class="st" type="number" step="0.1" min="0" value="${st.t}"></td><td><button class="del" title="remove">✕</button></td>`;
     tr.querySelector('.del').onclick = () => { tr.remove(); seqRenumber(); };
     tb.appendChild(tr);
   });
@@ -413,30 +413,30 @@ async function openSequence(name) {
 function seqPayload() { return { name: $('#seqName').value.trim() || 'test', steps: seqRows(), start: +$('#seqStart').value, end: +$('#seqEnd').value, cycles: +$('#seqCycles').value }; }
 $('#seqSave').onclick = async () => {
   const p = seqPayload(); const j = await guard(api('/sequences/' + encodeURIComponent(p.name), 'PUT', p));
-  if (j) { currentSeq = j.name; toast('Sekvencia uložená', true); loadSequences(); }
+  if (j) { currentSeq = j.name; toast('Sequence saved', true); loadSequences(); }
 };
 $('#seqDelete').onclick = async () => {
-  if (!currentSeq || !confirm(`Zmazať ${currentSeq}?`)) return;
+  if (!currentSeq || !confirm(`Delete ${currentSeq}?`)) return;
   await guard(api('/sequences/' + encodeURIComponent(currentSeq), 'DELETE')); currentSeq = null; $('#seqTable tbody').innerHTML = ''; loadSequences();
 };
 $('#seqRun').onclick = async () => {
   if (locked()) return;
-  const p = seqPayload(); if (!p.steps.length) return toast('Sekvencia nemá kroky');
-  if (!confirm(`Spustiť program: kroky ${p.start}–${p.end}, cykly ${p.cycles || '∞'}? Výstup sa ZAPNE.`)) return;
+  const p = seqPayload(); if (!p.steps.length) return toast('The sequence has no steps');
+  if (!confirm(`Start program: steps ${p.start}–${p.end}, cycles ${p.cycles || '∞'}? The output will be switched ON.`)) return;
   $('#seqOut').textContent = '';
   await guard(api('/sequences/run', 'POST', p));
 };
 $('#seqStop').onclick = () => guard(api('/scripts/stop', 'POST'));
 $('#seqClear').onclick = () => $('#seqOut').textContent = '';
 
-// ---------------------------------------------------------------- logy
+// ---------------------------------------------------------------- logs
 let currentLog = null;
 function onLoggerInfo(info) {
   ui.loggerInfo = info;
   led('ledLOG', info.active);
-  const txt = info.active ? `● ${info.name} · ${info.rows} riadkov · ${info.interval}s` : 'logovanie neaktívne';
-  $('#logInfo').textContent = txt; $('#qlogInfo').textContent = info.active ? `${info.rows} riadkov` : '';
-  $('#qlogBtn').textContent = info.active ? '■ Stop log' : '● Logovať';
+  const txt = info.active ? `● ${info.name} · ${info.rows} rows · ${info.interval}s` : 'logging inactive';
+  $('#logInfo').textContent = txt; $('#qlogInfo').textContent = info.active ? `${info.rows} rows` : '';
+  $('#qlogBtn').textContent = info.active ? '■ Stop log' : '● Log';
   $('#qlogBtn').classList.toggle('stop', info.active);
   $('#logStart').disabled = info.active; $('#logStop').disabled = !info.active;
   if (info.rows % 10 === 0 && $('#tab-logs').classList.contains('active')) loadLogs(true);
@@ -458,7 +458,7 @@ async function openLog(name) {
   const j = await guard(api(`/logs/${encodeURIComponent(name)}/data?limit=2000`)); if (!j) return;
   currentLog = name;
   $$('#logList li').forEach(li => li.classList.toggle('active', li.firstChild.textContent === name));
-  $('#logTitle').textContent = `${name} · ${j.total} riadkov`;
+  $('#logTitle').textContent = `${name} · ${j.total} rows`;
   $('#logDl').hidden = false; $('#logDl').href = '/api/logs/' + encodeURIComponent(name); $('#logDel').hidden = false;
   const rows = j.rows.map(r => ({ t: +r.time, v: +r.vout, i: +r.iout, p: +r.power }));
   drawChart($('#logChart'), rows, { showP: true });
@@ -472,12 +472,12 @@ $('#logStart').onclick = () => guard(api('/logs/start', 'POST', { name: $('#logN
 $('#logStop').onclick = () => guard(api('/logs/stop', 'POST').then(() => loadLogs()));
 $('#logRefresh').onclick = () => loadLogs();
 $('#logDel').onclick = async () => {
-  if (!currentLog || !confirm(`Zmazať ${currentLog}?`)) return;
+  if (!currentLog || !confirm(`Delete ${currentLog}?`)) return;
   await guard(api('/logs/' + encodeURIComponent(currentLog), 'DELETE'));
   currentLog = null; $('#logTitle').textContent = ''; $('#logTable').innerHTML = ''; $('#logDl').hidden = true; $('#logDel').hidden = true; loadLogs();
 };
 
-// ---------------------------------------------------------------- konzola
+// ---------------------------------------------------------------- console
 function addCmd(c) { appendOut($('#rawOut'), `[${fmtT(c.t)}] > ${c.cmd}${c.resp ? '   ← ' + JSON.stringify(c.resp) : ''}`); }
 function addEvent(e) { appendOut($('#events'), `[${fmtDT(e.t)}] ${e.msg}`, e.kind === 'error' ? 'err' : ''); }
 async function loadConsole() {
@@ -488,13 +488,13 @@ async function loadConsole() {
 async function sendRaw() {
   const cmd = $('#rawCmd').value.trim(); if (!cmd) return;
   const j = await guard(api('/raw', 'POST', { cmd }));
-  if (j && cmd.endsWith('?')) appendOut($('#rawOut'), `   odpoveď: ${JSON.stringify(j.resp)}${cmd === 'STATUS?' && j.resp ? ' = 0b' + j.resp.charCodeAt(0).toString(2).padStart(8, '0') : ''}`);
+  if (j && cmd.endsWith('?')) appendOut($('#rawOut'), `   response: ${JSON.stringify(j.resp)}${cmd === 'STATUS?' && j.resp ? ' = 0b' + j.resp.charCodeAt(0).toString(2).padStart(8, '0') : ''}`);
   $('#rawCmd').select();
 }
 $('#rawSend').onclick = sendRaw;
 $('#rawCmd').onkeydown = e => { if (e.key === 'Enter') sendRaw(); };
 
-// ---------------------------------------------------------------- štart
+// ---------------------------------------------------------------- start
 (async () => {
   setSeg('segV', '----', 4); setSeg('segI', '----', 4); setSeg('segP', '-OFF', 4);
   updateGutter();

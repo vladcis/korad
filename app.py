@@ -42,6 +42,7 @@ def _data_root():
 
 
 HOME = _data_root()
+HIDE_SN = os.environ.get("KORAD_HIDE_SN", "") not in ("", "0")
 SCRIPTS_DIR = os.path.join(HOME, "scripts")
 LOGS_DIR = os.path.join(HOME, "logs")
 STATIC_DIR = os.path.join(BUNDLE, "static")
@@ -127,9 +128,11 @@ class Controller:
         if baud:
             self.dev.baud = int(baud)
         idn = self.dev.connect(port)
+        if HIDE_SN:  # KORAD_HIDE_SN=1 -> sériové číslo sa v UI nezobrazí (zdieľanie obrazovky, screenshoty)
+            idn = re.sub(r"SN:\S+", "SN:••••••", idn)
         self.state.update(connected=True, port=self.dev.port, idn=idn, error=None)
         self.auto_reconnect = True
-        self.events.add(f"Pripojené: {idn} ({self.dev.port})")
+        self.events.add(f"Connected: {idn} ({self.dev.port})")
         self.refresh_set()
         return idn
 
@@ -137,7 +140,7 @@ class Controller:
         self.auto_reconnect = False
         self.dev.close()
         self.state.update(connected=False, error=None)
-        self.events.add("Odpojené")
+        self.events.add("Disconnected")
         self.broker.publish("state", self.state)
 
     # --- polling ---
@@ -149,7 +152,7 @@ class Controller:
                     self._poll_once()
                 except KoradError as e:
                     self.state.update(error=str(e), connected=self.dev.connected)
-                    self.events.add(f"Chyba komunikácie: {e}", "error")
+                    self.events.add(f"Communication error: {e}", "error")
                     self.broker.publish("state", self.state)
             else:
                 if self.state["connected"]:
@@ -160,7 +163,7 @@ class Controller:
                     try:
                         self.connect()
                     except KoradError as e:
-                        self.state.update(error=f"Znovupripojenie zlyhalo: {e}")
+                        self.state.update(error=f"Reconnect failed: {e}")
                         self.broker.publish("state", self.state)
             dt = POLL_INTERVAL - (time.monotonic() - t0)
             if dt > 0:
@@ -185,7 +188,7 @@ class Controller:
         iout = d.get_iout()
         st = d.status()
         if self.state["output"] and not st["output"] and time.time() - self._last_out_cmd > 2:
-            self.events.add("Výstup vypol samotný zdroj (ochrana OCP/OVP alebo tlačidlo na paneli)", "warn")
+            self.events.add("Output switched off by the PSU itself (OCP/OVP protection or front-panel button)", "warn")
         self.state.update(
             vout=vout, iout=iout, power=round(vout * iout, 3),
             mode="CV" if st["cv"] else "CC",
@@ -273,13 +276,13 @@ def _bool_route(name, fn):
     def view():
         on = bool((request.json or {}).get("on"))
         fn(on)
-        ctl.events.add(f"{name} {'ZAP' if on else 'VYP'}")
+        ctl.events.add(f"{name} {'ON' if on else 'OFF'}")
         return ok(on=on)
     view.__name__ = f"api_{name.lower()}"
     return view
 
 
-app.add_url_rule("/api/output", view_func=_bool_route("Výstup", lambda on: ctl.dev.output(on)), methods=["POST"])
+app.add_url_rule("/api/output", view_func=_bool_route("Output", lambda on: ctl.dev.output(on)), methods=["POST"])
 app.add_url_rule("/api/ocp", view_func=_bool_route("OCP", lambda on: ctl.dev.ocp(on)), methods=["POST"])
 app.add_url_rule("/api/ovp", view_func=_bool_route("OVP", lambda on: ctl.dev.ovp(on)), methods=["POST"])
 app.add_url_rule("/api/beep", view_func=_bool_route("Beep", lambda on: ctl.dev.beep(on)), methods=["POST"])
@@ -291,10 +294,10 @@ def api_limits():
     out = {}
     if j.get("ocp") is not None:
         out["ocp_limit"] = ctl.dev.set_ocp_limit(j["ocp"])
-        ctl.events.add(f"Prah OCP {out['ocp_limit']:.3f} A")
+        ctl.events.add(f"OCP threshold {out['ocp_limit']:.3f} A")
     if j.get("ovp") is not None:
         out["ovp_limit"] = ctl.dev.set_ovp_limit(j["ovp"])
-        ctl.events.add(f"Prah OVP {out['ovp_limit']:.2f} V")
+        ctl.events.add(f"OVP threshold {out['ovp_limit']:.2f} V")
     ctl.refresh_set()
     return ok(**out)
 
@@ -303,13 +306,13 @@ def api_limits():
 def api_memory(slot, action):
     if action == "save":
         ctl.dev.save(slot)
-        ctl.events.add(f"Uložené do M{slot}")
+        ctl.events.add(f"Saved to M{slot}")
     elif action == "recall":
         ctl.dev.recall(slot)
         ctl.refresh_set()
-        ctl.events.add(f"Vyvolané M{slot}")
+        ctl.events.add(f"Recalled M{slot}")
     else:
-        return err("Neznáma akcia")
+        return err("Unknown action")
     return ok()
 
 
@@ -318,7 +321,7 @@ def api_raw():
     j = request.json or {}
     cmd = (j.get("cmd") or "").strip()
     if not cmd:
-        return err("Prázdny príkaz")
+        return err("Empty command")
     expect = bool(j.get("expect", cmd.endswith("?")))
     resp = ctl.dev.raw(cmd, 1 if expect else 0)
     ctl.refresh_set()
@@ -352,7 +355,7 @@ def api_scripts():
 def api_script_get(name):
     name, p = _script_path(name)
     if not os.path.isfile(p):
-        return err("Skript neexistuje", 404)
+        return err("Script does not exist", 404)
     with open(p, encoding="utf-8") as f:
         return jsonify(name=name, code=f.read())
 
@@ -363,7 +366,7 @@ def api_script_put(name):
     code = (request.json or {}).get("code", "")
     with open(p, "w", encoding="utf-8") as f:
         f.write(code)
-    ctl.events.add(f"Skript '{name}' uložený")
+    ctl.events.add(f"Script '{name}' saved")
     return ok(name=name)
 
 
@@ -372,7 +375,7 @@ def api_script_delete(name):
     name, p = _script_path(name)
     if os.path.isfile(p):
         os.remove(p)
-        ctl.events.add(f"Skript '{name}' zmazaný")
+        ctl.events.add(f"Script '{name}' deleted")
     return ok()
 
 
@@ -384,7 +387,7 @@ def api_script_run():
     if code is None:
         name, p = _script_path(name)
         if not os.path.isfile(p):
-            return err("Skript neexistuje", 404)
+            return err("Script does not exist", 404)
         with open(p, encoding="utf-8") as f:
             code = f.read()
     try:
@@ -415,16 +418,16 @@ def api_logs():
 def api_logs_start():
     j = request.json or {}
     if not ctl.dev.connected:
-        return err("Zdroj nie je pripojený", 503)
+        return err("PSU is not connected", 503)
     name = ctl.logger.start(j.get("name") or "log", j.get("interval") or 1.0)
-    ctl.events.add(f"Logovanie spustené: {name}")
+    ctl.events.add(f"Logging started: {name}")
     return ok(name=name, logger=ctl.logger.info())
 
 
 @app.post("/api/logs/stop")
 def api_logs_stop():
     was = ctl.logger.stop()
-    ctl.events.add(f"Logovanie zastavené: {was}")
+    ctl.events.add(f"Logging stopped: {was}")
     return ok(logger=ctl.logger.info())
 
 
@@ -433,7 +436,7 @@ def api_log_download(name):
     try:
         return send_file(ctl.logger.path(name), as_attachment=True, download_name=os.path.basename(name))
     except FileNotFoundError:
-        return err("Log neexistuje", 404)
+        return err("Log does not exist", 404)
 
 
 @app.get("/api/logs/<name>/data")
@@ -441,7 +444,7 @@ def api_log_data(name):
     try:
         return jsonify(ctl.logger.read(name, int(request.args.get("limit", 3000))))
     except FileNotFoundError:
-        return err("Log neexistuje", 404)
+        return err("Log does not exist", 404)
 
 
 @app.delete("/api/logs/<name>")
@@ -449,7 +452,7 @@ def api_log_delete(name):
     try:
         ctl.logger.delete(name)
     except FileNotFoundError:
-        return err("Log neexistuje", 404)
+        return err("Log does not exist", 404)
     return ok()
 
 
@@ -489,12 +492,12 @@ def api_presets_put():
 def api_preset_apply(n):
     items = _load_json(PRESETS_FILE, DEFAULT_PRESETS)
     if not 0 <= n < len(items):
-        return err("Neplatná predvoľba", 404)
+        return err("Invalid preset", 404)
     p = items[n]
     ctl.dev.set_v(p["v"])
     ctl.dev.set_i(p["i"])
     ctl.refresh_set()
-    ctl.events.add(f"Predvoľba {n + 1}: {p['v']:.2f} V / {p['i']:.3f} A")
+    ctl.events.add(f"Preset {n + 1}: {p['v']:.2f} V / {p['i']:.3f} A")
     return ok(**p)
 
 
@@ -516,7 +519,7 @@ def api_sequences():
 def api_sequence_get(name):
     name, p = _seq_path(name)
     if not os.path.isfile(p):
-        return err("Sekvencia neexistuje", 404)
+        return err("Sequence does not exist", 404)
     return jsonify(name=name, **_load_json(p, {}))
 
 
@@ -525,7 +528,7 @@ def api_sequence_put(name):
     name, p = _seq_path(name)
     j = request.json or {}
     _save_json(p, {"steps": j.get("steps", []), "start": j.get("start", 1), "end": j.get("end"), "cycles": j.get("cycles", 1)})
-    ctl.events.add(f"Sekvencia '{name}' uložená")
+    ctl.events.add(f"Sequence '{name}' saved")
     return ok(name=name)
 
 
@@ -588,28 +591,28 @@ def create(device=None, autoconnect=True, baud=9600):
     os.makedirs(LOGS_DIR, exist_ok=True)
     os.makedirs(SEQ_DIR, exist_ok=True)
     _seed_scripts()
-    print("Dáta (skripty, logy):", HOME)
+    print("Data (scripts, logs):", HOME)
     ctl = Controller(device)
     ctl.dev.baud = baud
     if autoconnect:
         try:
-            print("Pripojené:", ctl.connect(), "na", ctl.dev.port)
+            print("Connected:", ctl.connect(), "on", ctl.dev.port)
         except KoradError as e:
             ctl.state.update(error=str(e))
-            print("Zdroj sa nepodarilo pripojiť:", e, "(pripoj ho cez UI)", file=sys.stderr)
+            print("Could not connect to the PSU:", e, "(connect it from the UI)", file=sys.stderr)
     return app
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="KORAD KA3005P web ovládanie")
+    ap = argparse.ArgumentParser(description="KORAD KA3005P web control")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8585)
-    ap.add_argument("--device", default=None, help="sériový port (predvolene autodetekcia)")
+    ap.add_argument("--device", default=None, help="serial port (default: auto-detect)")
     ap.add_argument("--baud", type=int, default=9600)
     ap.add_argument("--no-autoconnect", action="store_true")
     a = ap.parse_args(argv)
     create(a.device, not a.no_autoconnect, a.baud)
-    print(f"Otvor http://{a.host}:{a.port}")
+    print(f"Open http://{a.host}:{a.port}")
     app.run(host=a.host, port=a.port, threaded=True, debug=False, use_reloader=False)
 
 

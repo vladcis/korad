@@ -2,8 +2,9 @@
 
 GUI pre laboratórny zdroj **KORAD KA3005P / KA3005PS** (a klony: Tenma 72-2535, RND 320-KA3005P, Velleman LABPS3005D…)
 pripojený cez USB. Jedna aplikácia, tri platformy: na Windows a macOS sa otvorí ako natívne okno, na Linuxe v prehliadači.
+Používateľské rozhranie je v angličtine.
 
-![Panel – nabíjanie Li-ion článku](docs/panel.png)
+![Panel](docs/panel.png)
 
 
 ## 1. Stiahnutie hotovej aplikácie (bez inštalácie Pythonu)
@@ -69,6 +70,7 @@ python desktop.py            :: natívne okno, alebo:  python app.py  -> http://
 Alebo dvojklik na `run.bat` (otvorí prehliadač).
 
 **Voliteľné parametre**: `python app.py --port 9000 --device COM5 --host 0.0.0.0` (`--host 0.0.0.0` sprístupní UI v lokálnej sieti, napr. z tabletu).
+Premenná prostredia `KORAD_HIDE_SN=1` skryje v UI sériové číslo zdroja (zdieľanie obrazovky, screenshoty).
 
 ## 3. Vlastný build binárky
 
