@@ -100,7 +100,8 @@ function applyState(s) {
   } else { $('#limitsNote').hidden = false; $('#inOCP').disabled = $('#inOVP').disabled = true; }
   if (!ui.editingV) { $('#inV').value = s.vset.toFixed(2); $('#slV').value = s.vset; }
   if (!ui.editingI) { $('#inI').value = s.iset.toFixed(3); $('#slI').value = s.iset; }
-  chart.data.push({ t: s.t, v: s.vout, i: s.iout, p: s.power });
+  const lastT = chart.data.length ? chart.data[chart.data.length - 1].t : 0;
+  if (s.t > lastT) chart.data.push({ t: s.t, v: s.vout, i: s.iout, p: s.power });
   const cut = s.t - 3700;
   while (chart.data.length && chart.data[0].t < cut) chart.data.shift();
   drawChart($('#chart'), chart.data.filter(d => d.t >= s.t - chart.win), { showP: chart.showP, keyT: 't' });
@@ -500,6 +501,11 @@ $('#rawCmd').onkeydown = e => { if (e.key === 'Enter') sendRaw(); };
   updateGutter();
   guard(loadPorts()); guard(loadPresets());
   if (location.hash.length > 1) showTab(location.hash.slice(1));
+  // trend history from the server (survives page refresh)
+  try {
+    const h = await api('/history');
+    chart.data = h.samples.map(x => ({ t: x[0], v: x[1], i: x[2], p: x[3] }));
+  } catch (_) { }
   try { const j = await api('/state'); applyState(j.state); onScriptEvent(j.script, true); onLoggerInfo(j.logger); } catch (_) { }
   connectStream();
 })();

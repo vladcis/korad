@@ -5,6 +5,7 @@ Spustenie:  python app.py [--port 8585] [--device /dev/ttyACM0] [--host 127.0.0.
 Potom otvor http://127.0.0.1:8585
 """
 import argparse
+import collections
 import json
 import os
 import queue
@@ -51,6 +52,7 @@ SEQ_DIR = os.path.join(DATA_DIR, "sequences")
 PRESETS_FILE = os.path.join(DATA_DIR, "presets.json")
 DEFAULT_PRESETS = [{"v": 3.3, "i": 1.0}, {"v": 5.0, "i": 1.0}, {"v": 9.0, "i": 1.0},
                    {"v": 12.0, "i": 2.0}, {"v": 24.0, "i": 2.0}, {"v": 30.0, "i": 5.0}]
+HISTORY_SECONDS = 3600  # server-side buffer for the trend chart (survives page refresh)
 POLL_INTERVAL = 0.5     # zdroj odpovedá pomaly (~80 ms/príkaz) a pri preťažení resetuje USB
 SET_REFRESH_EVERY = 3   # každý N-tý poll prečítaj aj VSET/ISET
 RECONNECT_EVERY = 3.0   # automatický pokus o znovupripojenie [s]
@@ -99,6 +101,7 @@ class Controller:
             "t": 0.0,
         }
         self.cmd_history = []
+        self.history = collections.deque(maxlen=int(HISTORY_SECONDS / POLL_INTERVAL) + 10)
         self._last_out_cmd = 0.0
         self.auto_reconnect = False
         self._last_reconnect = 0.0
@@ -195,6 +198,7 @@ class Controller:
             output=st["output"], ocp=st["ocp"], ovp=st["ovp"], beep=st["beep"],
             t=time.time(), error=None, connected=True,
         )
+        self.history.append((round(self.state["t"], 3), vout, iout, self.state["power"], int(st["output"])))
         self.logger.tick(self.state)
         self.broker.publish("state", self.state)
 
@@ -231,6 +235,14 @@ def index():
 def api_state():
     return jsonify(state=ctl.state, script=ctl.script_status(), logger=ctl.logger.info(),
                    paths={"home": HOME, "scripts": SCRIPTS_DIR, "logs": LOGS_DIR})
+
+
+@app.get("/api/history")
+def api_history():
+    """Recent samples for the trend chart: [[t, vout, iout, power, output], ...]."""
+    secs = min(HISTORY_SECONDS, max(1, int(request.args.get("seconds", HISTORY_SECONDS))))
+    cut = time.time() - secs
+    return jsonify(samples=[h for h in list(ctl.history) if h[0] >= cut])
 
 
 @app.get("/api/ports")
