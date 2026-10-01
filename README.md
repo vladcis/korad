@@ -6,7 +6,7 @@ Používateľské rozhranie je v angličtine.
 
 ![Panel](docs/panel.png)
 
-Nabíjanie Li-ion článku skriptom `10_nabijanie_liion.py`: CV fáza 4.20 V, prúd klesá z 1.25 A, pri 0.125 A (C/20) skript vypne výstup.
+Nabíjanie Li-ion článku skriptom `10_charge_liion.py`: CV fáza 4.20 V, prúd klesá z 1.25 A, pri 0.125 A (C/20) skript vypne výstup.
 
 ![Nabíjanie Li-ion – CV fáza](docs/charging.png)
 
@@ -121,12 +121,12 @@ Parametre (počet článkov, kapacita, C-rate, koncové napätie) sú na začiat
 
 | skript | chémia | metóda |
 |---|---|---|
-| `10_nabijanie_liion.py` | Li-ion / LiPo 1S–7S | prednabíjanie → CC → CV, koniec pri C/20 |
-| `11_nabijanie_lifepo4.py` | LiFePO4 (4S = 12 V) | CC → CV 3.60 V/čl., koniec pri C/20 |
-| `12_nabijanie_olovo.py` | Pb 12 V (AGM, gél, klasická) | bulk → absorpcia 14.4 V → float 13.6 V |
-| `13_nabijanie_nimh.py` | NiMH / NiCd | CC s ukončením −ΔV, alebo pomalé 0.1 C na čas |
-| `14_nabijanie_vlastne.py` | čokoľvek | CC/CV s ručnými hodnotami |
-| `15_test_kapacity_info.py` | – | len zmeria napätie batérie |
+| `10_charge_liion.py` | Li-ion / LiPo 1S–7S | prednabíjanie → CC → CV, koniec pri C/20 |
+| `11_charge_lifepo4.py` | LiFePO4 (4S = 12 V) | CC → CV 3.60 V/čl., koniec pri C/20 |
+| `12_charge_lead_acid.py` | Pb 12 V (AGM, gél, klasická) | bulk → absorpcia 14.4 V → float 13.6 V |
+| `13_charge_nimh.py` | NiMH / NiCd | CC s ukončením −ΔV, alebo pomalé 0.1 C na čas |
+| `14_charge_custom.py` | čokoľvek | CC/CV s ručnými hodnotami |
+| `15_battery_check.py` | – | len zmeria napätie batérie |
 
 Knižnica pred štartom overí, že batéria je pripojená a má napätie v rozumnom rozsahu, počíta nabité Ah,
 hlási prechod CC → CV a vypne výstup pri časovom limite, prekročení kapacity, chybe alebo tlačidle Stop.
