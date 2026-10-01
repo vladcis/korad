@@ -128,6 +128,7 @@ Parametre (počet článkov, kapacita, C-rate, koncové napätie) sú na začiat
 | `14_charge_custom.py` | čokoľvek | CC/CV s ručnými hodnotami |
 | `15_battery_check.py` | – | len zmeria napätie batérie |
 | `16_charge_panasonic_cgr18650cg.py` | Panasonic CGR18650CG (18650) | hodnoty z datasheetu: 1.5 A (0.7 It), 4.20 V, koniec 110 mA |
+| `17_charge_sanyo_ur18650a.py` | Sanyo UR18650A (18650) | hodnoty z datasheetu: 1.51 A, 4.20 V, prednabíjanie pod 3.0 V |
 
 Knižnica pred štartom overí, že batéria je pripojená a má napätie v rozumnom rozsahu, počíta nabité Ah,
 hlási prechod CC → CV a vypne výstup pri časovom limite, prekročení kapacity, chybe alebo tlačidle Stop.
