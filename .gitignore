@@ -1,0 +1,10 @@
+logs/*.csv
+logs/events.log
+logs/server.out
+data/presets.json
+__pycache__/
+*.pyc
+dist/
+build/
+*.spec
+.venv/

@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="sk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KORAD KA3005P – ovládanie</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="logo">KORAD</span> <span id="idn" class="idn">–</span></div>
+  <div class="conn">
+    <span id="connDot" class="dot off"></span>
+    <select id="portSel" title="Sériový port"></select>
+    <select id="baudSel" title="Baud rate"><option>9600</option><option>19200</option><option>38400</option><option>57600</option><option>115200</option></select>
+    <button id="btnConnect" class="key">Pripojiť</button>
+    <button id="btnDisconnect" class="key" hidden>Odpojiť</button>
+  </div>
+  <nav class="tabs">
+    <button class="tab active" data-tab="panel">Panel</button>
+    <button class="tab" data-tab="program">Program</button>
+    <button class="tab" data-tab="scripts">Skripty</button>
+    <button class="tab" data-tab="logs">Logy</button>
+    <button class="tab" data-tab="console">Konzola</button>
+  </nav>
+</header>
+
+<div id="toast" class="toast" hidden></div>
+
+<!-- ============================ PANEL ============================ -->
+<main id="tab-panel" class="tabpane active">
+  <section class="device">
+    <div class="display">
+      <div class="row">
+        <div id="segV" class="seg big"></div>
+        <div class="unitcol"><span class="unit">V</span>
+          <span class="led-lbl"><i id="ledCV" class="led"></i>CV</span>
+          <span class="led-lbl"><i id="ledCC" class="led"></i>CC</span></div>
+      </div>
+      <div class="row">
+        <div id="segI" class="seg big"></div>
+        <div class="unitcol"><span class="unit">A</span><span class="unit small" id="unitMA">mA</span></div>
+      </div>
+      <div class="row">
+        <div class="mems">
+          <span class="led-lbl" data-m="1"><i class="led"></i>M1</span>
+          <span class="led-lbl" data-m="2"><i class="led"></i>M2</span>
+          <span class="led-lbl" data-m="3"><i class="led"></i>M3</span>
+          <span class="led-lbl" data-m="4"><i class="led"></i>M4</span>
+          <span class="led-lbl" data-m="5"><i class="led"></i>M5</span>
+        </div>
+        <div id="segP" class="seg small"></div>
+        <div class="unitcol"><span class="unit">W</span></div>
+      </div>
+      <div class="row status">
+        <span class="led-lbl"><i id="ledOCP" class="led"></i>OCP</span>
+        <span class="led-lbl"><i id="ledOVP" class="led"></i>OVP</span>
+        <span class="led-lbl"><i id="ledLOCK" class="led"></i>LOCK</span>
+        <span class="led-lbl"><i id="ledON" class="led"></i>ON</span>
+        <span class="led-lbl"><i id="ledBEEP" class="led"></i>BEEP</span>
+        <span class="led-lbl"><i id="ledLOG" class="led"></i>LOG</span>
+        <span class="led-lbl"><i id="ledSCR" class="led"></i>SCRIPT</span>
+        <span id="dispErr" class="disp-err"></span>
+      </div>
+    </div>
+
+    <div class="controls">
+      <div class="group">
+        <h3>MEMORY <small>save/recall</small></h3>
+        <div class="memkeys">
+          <button class="key mem" data-m="1">M1</button>
+          <button class="key mem" data-m="2">M2</button>
+          <button class="key mem" data-m="3">M3</button>
+          <button class="key mem" data-m="4">M4</button>
+          <button class="key mem" data-m="5">M5</button>
+        </div>
+        <label class="chk"><input type="checkbox" id="memSave"> ďalšie stlačenie M = <b>ULOŽIŤ</b></label>
+      </div>
+
+      <div class="group">
+        <h3>PREDVOĽBY <small>U / I</small></h3>
+        <div class="presetgrid" id="presetGrid"></div>
+        <label class="chk"><input type="checkbox" id="presetSave"> ďalšie stlačenie = <b>ULOŽIŤ</b> aktuálne U/I</label>
+      </div>
+
+      <div class="group">
+        <h3>FUNKCIE</h3>
+        <div class="fkeys">
+          <button class="key tog" id="btnOCP">OCP</button>
+          <button class="key tog" id="btnOVP">OVP</button>
+          <button class="key tog" id="btnBEEP">BEEP</button>
+          <button class="key tog" id="btnLOCK">LOCK</button>
+          <button class="key tog" id="btnMA">A/mA</button>
+        </div>
+        <button class="key onoff" id="btnOUT">ON / OFF</button>
+      </div>
+
+      <div class="group adjust">
+        <h3>ADJUST</h3>
+        <div class="setrow">
+          <label>Napätie</label>
+          <div class="stepper">
+            <button class="key sm" data-dv="-1">−1</button>
+            <button class="key sm" data-dv="-0.1">−0.1</button>
+            <button class="key sm" data-dv="-0.01">−0.01</button>
+            <input id="inV" type="number" step="0.01" min="0" max="30" value="0">
+            <span class="u">V</span>
+            <button class="key sm" data-dv="0.01">+0.01</button>
+            <button class="key sm" data-dv="0.1">+0.1</button>
+            <button class="key sm" data-dv="1">+1</button>
+          </div>
+          <input id="slV" type="range" min="0" max="30" step="0.01" value="0">
+        </div>
+        <div class="setrow">
+          <label>Prúd</label>
+          <div class="stepper">
+            <button class="key sm" data-di="-1">−1</button>
+            <button class="key sm" data-di="-0.1">−0.1</button>
+            <button class="key sm" data-di="-0.001">−0.001</button>
+            <input id="inI" type="number" step="0.001" min="0" max="5" value="0">
+            <span class="u">A</span>
+            <button class="key sm" data-di="0.001">+0.001</button>
+            <button class="key sm" data-di="0.1">+0.1</button>
+            <button class="key sm" data-di="1">+1</button>
+          </div>
+          <input id="slI" type="range" min="0" max="5" step="0.001" value="0">
+        </div>
+        <div class="setrow presets">
+          <label>Rýchlo</label>
+          <div>
+            <button class="key sm" data-pv="3.3">3.3 V</button>
+            <button class="key sm" data-pv="5">5 V</button>
+            <button class="key sm" data-pv="9">9 V</button>
+            <button class="key sm" data-pv="12">12 V</button>
+            <button class="key sm" data-pv="24">24 V</button>
+            <span class="sep"></span>
+            <button class="key sm" data-pi="0.1">0.1 A</button>
+            <button class="key sm" data-pi="0.5">0.5 A</button>
+            <button class="key sm" data-pi="1">1 A</button>
+            <button class="key sm" data-pi="2">2 A</button>
+            <button class="key sm" data-pi="5">5 A</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="chartbox">
+    <div class="chart-head">
+      <h3>Priebeh</h3>
+      <label>okno
+        <select id="chartWin">
+          <option value="30">30 s</option><option value="60" selected>1 min</option>
+          <option value="300">5 min</option><option value="900">15 min</option><option value="3600">1 h</option>
+        </select></label>
+      <label class="chk"><input type="checkbox" id="chShowP"> výkon</label>
+      <button class="key sm" id="chartClear">Vymazať</button>
+      <span class="legend"><i style="background:#ff6a3d"></i>U [V] <i style="background:#3ec8ff"></i>I [A] <i style="background:#9cff57"></i>P [W]</span>
+      <span class="spacer"></span>
+      <span class="qlog">
+        <input id="qlogName" placeholder="názov logu" value="meranie">
+        <button class="key sm" id="qlogBtn">● Logovať</button>
+        <span id="qlogInfo" class="muted"></span>
+      </span>
+    </div>
+    <canvas id="chart" height="220"></canvas>
+  </section>
+</main>
+
+<!-- ============================ PROGRAM ============================ -->
+<main id="tab-program" class="tabpane">
+  <aside class="sidebar">
+    <div class="side-head"><h3>Sekvencie</h3><button class="key sm" id="seqNew">+ Nová</button></div>
+    <ul id="seqList" class="list"></ul>
+    <p class="muted">Programovateľný test: každý krok nastaví U a I a počká zadaný čas. Na konci sa výstup vypne. Beží cez skriptovací engine, takže ho vidíš aj v záložke Skripty.</p>
+  </aside>
+  <section class="editorbox">
+    <div class="toolbar">
+      <input id="seqName" placeholder="názov sekvencie" value="test">
+      <button class="key sm" id="seqSave">Uložiť</button>
+      <button class="key sm" id="seqDelete">Zmazať</button>
+      <button class="key sm" id="seqAdd">+ Krok</button>
+      <span class="spacer"></span>
+      <label class="muted">od <input id="seqStart" type="number" min="1" value="1" class="narrow"></label>
+      <label class="muted">po <input id="seqEnd" type="number" min="1" value="1" class="narrow"></label>
+      <label class="muted">cykly <input id="seqCycles" type="number" min="0" value="1" class="narrow" title="0 = nekonečne"></label>
+      <button class="key sm run" id="seqRun">▶ Štart</button>
+      <button class="key sm stop" id="seqStop">■ Stop</button>
+      <span id="seqStatus" class="pill">idle</span>
+    </div>
+    <div class="tablewrap seqwrap">
+      <table id="seqTable" class="seqtable">
+        <thead><tr><th>#</th><th>Napätie [V]</th><th>Prúd [A]</th><th>Čas [s]</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="output-head"><h3>Priebeh</h3><button class="key sm" id="seqClear">Vymazať</button></div>
+    <pre id="seqOut" class="output"></pre>
+  </section>
+</main>
+
+<!-- ============================ SKRIPTY ============================ -->
+<main id="tab-scripts" class="tabpane">
+  <aside class="sidebar">
+    <div class="side-head"><h3>Skripty</h3><button class="key sm" id="scrNew">+ Nový</button></div>
+    <ul id="scrList" class="list"></ul>
+    <details class="help">
+      <summary>API pre skripty (Python)</summary>
+<pre>psu.set_v(12.0)        # napätie [V]
+psu.set_i(0.5)         # prúd [A]
+psu.set(volts=5, amps=1)
+psu.on() / psu.off()   # výstup
+psu.vout, psu.iout     # meranie
+psu.vset, psu.iset     # nastavené
+psu.power              # W
+psu.status()           # dict cv/ocp/ovp/output
+psu.wait(2.5)          # pauza (zastaviteľná)
+psu.ramp_v(0, 12, 10)  # rampa 0→12 V za 10 s
+psu.ramp_i(0, 1, 5)
+psu.ocp(True) psu.ovp(True) psu.beep(False)
+psu.save(1) psu.recall(1)
+psu.raw("VSET1:05.00")
+psu.log("text") / print("text")
+psu.log_start("nazov", 0.5)
+psu.log_stop()
+psu.safe_off = False   # nevypnúť výstup pri chybe/stop
+time.sleep(), math.*</pre>
+    </details>
+  </aside>
+  <section class="editorbox">
+    <div class="toolbar">
+      <input id="scrName" placeholder="názov skriptu" value="novy">
+      <button class="key sm" id="scrSave" title="Ctrl+S">Uložiť</button>
+      <button class="key sm" id="scrDelete">Zmazať</button>
+      <span class="spacer"></span>
+      <button class="key sm run" id="scrRun" title="Ctrl+Enter">▶ Spustiť</button>
+      <button class="key sm stop" id="scrStop">■ Stop</button>
+      <span id="scrStatus" class="pill">idle</span>
+    </div>
+    <div class="editor">
+      <pre id="gutter" class="gutter">1</pre>
+      <textarea id="code" spellcheck="false" wrap="off"></textarea>
+    </div>
+    <div class="output-head"><h3>Výstup skriptu</h3><button class="key sm" id="scrClear">Vymazať</button></div>
+    <pre id="scrOut" class="output"></pre>
+  </section>
+</main>
+
+<!-- ============================ LOGY ============================ -->
+<main id="tab-logs" class="tabpane">
+  <aside class="sidebar">
+    <div class="side-head"><h3>Logovanie</h3></div>
+    <div class="logctl">
+      <input id="logName" placeholder="názov" value="meranie">
+      <label>interval <input id="logInt" type="number" min="0.25" step="0.25" value="1"> s</label>
+      <button class="key sm" id="logStart">● Štart</button>
+      <button class="key sm stop" id="logStop">■ Stop</button>
+      <div id="logInfo" class="muted"></div>
+    </div>
+    <div class="side-head"><h3>Súbory CSV</h3><button class="key sm" id="logRefresh">↻</button></div>
+    <ul id="logList" class="list"></ul>
+  </aside>
+  <section class="logview">
+    <div class="toolbar">
+      <span id="logTitle" class="muted">Vyber log zo zoznamu</span>
+      <span class="spacer"></span>
+      <a id="logDl" class="key sm" href="#" download hidden>⬇ Stiahnuť CSV</a>
+      <button class="key sm" id="logDel" hidden>Zmazať</button>
+    </div>
+    <canvas id="logChart" height="260"></canvas>
+    <div class="tablewrap"><table id="logTable"></table></div>
+  </section>
+</main>
+
+<!-- ============================ KONZOLA ============================ -->
+<main id="tab-console" class="tabpane">
+  <section class="consolebox">
+    <h3>Priamy príkaz zdroju</h3>
+    <div class="toolbar">
+      <input id="rawCmd" placeholder="napr. VSET1:05.00  alebo  *IDN?  alebo  STATUS?" list="rawHints">
+      <datalist id="rawHints">
+        <option value="*IDN?"><option value="STATUS?"><option value="VSET1?"><option value="ISET1?">
+        <option value="VOUT1?"><option value="IOUT1?"><option value="VSET1:05.00"><option value="ISET1:0.500">
+        <option value="OUT1"><option value="OUT0"><option value="OCP1"><option value="OCP0"><option value="OVP1"><option value="OVP0">
+        <option value="BEEP1"><option value="BEEP0"><option value="SAV1"><option value="RCL1">
+      </datalist>
+      <button class="key sm" id="rawSend">Poslať</button>
+    </div>
+    <pre id="rawOut" class="output"></pre>
+  </section>
+  <section class="consolebox">
+    <h3>Udalosti</h3>
+    <pre id="events" class="output tall"></pre>
+  </section>
+</main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

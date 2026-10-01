@@ -1,0 +1,5 @@
+# KORAD KA3005P/PS (Winbond Virtual COM 0416:5011)
+# - ModemManager ho nebude skúšať ako modem (inak posiela AT príkazy a ruší komunikáciu)
+# - stabilný názov /dev/korad
+# Inštalácia: sudo cp 99-korad.rules /etc/udev/rules.d/ && sudo udevadm control --reload && sudo udevadm trigger
+ATTRS{idVendor}=="0416", ATTRS{idProduct}=="5011", ENV{ID_MM_DEVICE_IGNORE}="1", MODE="0660", GROUP="dialout", SYMLINK+="korad"
