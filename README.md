@@ -6,6 +6,10 @@ Používateľské rozhranie je v angličtine.
 
 ![Panel](docs/panel.png)
 
+Nabíjanie Li-ion článku skriptom `10_nabijanie_liion.py`: CV fáza 4.20 V, prúd klesá z 1.25 A, pri 0.125 A (C/20) skript vypne výstup.
+
+![Nabíjanie Li-ion – CV fáza](docs/charging.png)
+
 
 ## 1. Stiahnutie hotovej aplikácie (bez inštalácie Pythonu)
 
