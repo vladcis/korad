@@ -1,0 +1,68 @@
+name: build
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            asset: korad-linux-x86_64
+            webview: "0"
+          - os: windows-latest
+            asset: korad-windows-x64.exe
+            webview: "1"
+          - os: macos-latest
+            asset: korad-macos-arm64.zip
+            webview: "1"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+      - name: Install pywebview (Windows/macOS)
+        if: matrix.webview == '1'
+        run: pip install pywebview
+      - name: Build
+        run: python build.py
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: cp dist/korad "${{ matrix.asset }}" && chmod +x "${{ matrix.asset }}"
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: cp dist/korad.exe "${{ matrix.asset }}"
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: cd dist && ditto -c -k --keepParent korad.app "../${{ matrix.asset }}"
+      - name: Smoke test (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          KORAD_HOME=/tmp/korad-test ./${{ matrix.asset }} --server --port 8591 --no-autoconnect >/tmp/out.log 2>&1 &
+          sleep 6
+          curl -sf http://127.0.0.1:8591/api/state | head -c 300
+          curl -sf http://127.0.0.1:8591/api/scripts | grep -q lib_batt
+          cat /tmp/out.log
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ matrix.asset }}
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.asset }}
+          generate_release_notes: true

@@ -9,6 +9,7 @@ import json
 import os
 import queue
 import re
+import shutil
 import sys
 import threading
 import time
@@ -21,10 +22,30 @@ from scripting import ScriptRunner
 from sequencer import sequence_code
 
 BASE = os.path.dirname(os.path.abspath(__file__))
-SCRIPTS_DIR = os.path.join(BASE, "scripts")
-LOGS_DIR = os.path.join(BASE, "logs")
-STATIC_DIR = os.path.join(BASE, "static")
-DATA_DIR = os.path.join(BASE, "data")
+FROZEN = bool(getattr(sys, "frozen", False))          # zabalené PyInstallerom
+BUNDLE = getattr(sys, "_MEIPASS", BASE)               # kde sú static/ a ukážkové scripts/
+
+
+def _data_root():
+    """Priečinok s používateľskými dátami (skripty, logy, sekvencie).
+    Zo zdrojákov = priečinok projektu; zabalená aplikácia = používateľský profil (prepíše KORAD_HOME)."""
+    env = os.environ.get("KORAD_HOME")
+    if env:
+        return os.path.abspath(env)
+    if not FROZEN:
+        return BASE
+    if sys.platform == "win32":
+        return os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "Korad")
+    if sys.platform == "darwin":
+        return os.path.expanduser("~/Library/Application Support/Korad")
+    return os.path.join(os.environ.get("XDG_DATA_HOME", os.path.expanduser("~/.local/share")), "korad")
+
+
+HOME = _data_root()
+SCRIPTS_DIR = os.path.join(HOME, "scripts")
+LOGS_DIR = os.path.join(HOME, "logs")
+STATIC_DIR = os.path.join(BUNDLE, "static")
+DATA_DIR = os.path.join(HOME, "data")
 SEQ_DIR = os.path.join(DATA_DIR, "sequences")
 PRESETS_FILE = os.path.join(DATA_DIR, "presets.json")
 DEFAULT_PRESETS = [{"v": 3.3, "i": 1.0}, {"v": 5.0, "i": 1.0}, {"v": 9.0, "i": 1.0},
@@ -193,7 +214,8 @@ def index():
 # --- stav / pripojenie ---
 @app.get("/api/state")
 def api_state():
-    return jsonify(state=ctl.state, script=ctl.script_status(), logger=ctl.logger.info())
+    return jsonify(state=ctl.state, script=ctl.script_status(), logger=ctl.logger.info(),
+                   paths={"home": HOME, "scripts": SCRIPTS_DIR, "logs": LOGS_DIR})
 
 
 @app.get("/api/ports")
@@ -523,11 +545,24 @@ def api_stream():
 
 
 # ---------------------------------------------------------------- main
+def _seed_scripts():
+    """Pri prvom spustení zabalenej aplikácie skopíruje ukážkové skripty do používateľského priečinka."""
+    src = os.path.join(BUNDLE, "scripts")
+    if not os.path.isdir(src) or os.path.abspath(src) == os.path.abspath(SCRIPTS_DIR):
+        return
+    for fn in os.listdir(src):
+        dst = os.path.join(SCRIPTS_DIR, fn)
+        if fn.endswith(".py") and not os.path.exists(dst):
+            shutil.copyfile(os.path.join(src, fn), dst)
+
+
 def create(device=None, autoconnect=True, baud=9600):
     global ctl
     os.makedirs(SCRIPTS_DIR, exist_ok=True)
     os.makedirs(LOGS_DIR, exist_ok=True)
     os.makedirs(SEQ_DIR, exist_ok=True)
+    _seed_scripts()
+    print("Dáta (skripty, logy):", HOME)
     ctl = Controller(device)
     ctl.dev.baud = baud
     if autoconnect:
