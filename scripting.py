@@ -68,6 +68,22 @@ class ScriptPSU:
     def beep(self, on):
         self._dev().beep(bool(on))
 
+    def set_ocp(self, amps):
+        """Prah OCP [A] (nezapína ochranu – na to je psu.ocp(True))."""
+        return self._dev().set_ocp_limit(amps)
+
+    def set_ovp(self, volts):
+        """Prah OVP [V]."""
+        return self._dev().set_ovp_limit(volts)
+
+    @property
+    def ocp_limit(self):
+        return self._dev().get_ocp_limit()
+
+    @property
+    def ovp_limit(self):
+        return self._dev().get_ovp_limit()
+
     def save(self, slot):
         self._dev().save(slot)
 

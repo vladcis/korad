@@ -87,6 +87,8 @@ GitHub Actions (`.github/workflows/build.yml`) zostaví všetky tri verzie autom
 - **Skripty** – Python skripty s objektom `psu` (ukladať, editovať, spúšťať, zastaviť), výstup v reálnom čase.
 - **Logy** – CSV logovanie U/I/P s nastaviteľným intervalom, graf aj tabuľka, sťahovanie.
 - **Konzola** – priame príkazy zdroju (`VSET1:05.00`, `STATUS?`…), história príkazov a udalostí.
+- Ochrany OCP / OVP so zapnutím a nastavením prahu (KA3005PS), tlačidlá ukazujú ZAP/VYP.
+- Počas behu skriptu alebo programu je panel zamknutý (ostane len Stop), aby ručný zásah nepokazil meranie.
 - Automatické znovupripojenie po výpadku USB, voľba portu a baud rate.
 
 ## Skriptovanie
@@ -102,6 +104,7 @@ Skripty môžu importovať vlastné knižnice `lib_*.py` z toho istého priečin
 | `psu.wait(s)` (= `time.sleep`) | pauza, dá sa prerušiť tlačidlom Stop |
 | `psu.ramp_v(od, do, trvanie, step)`, `psu.ramp_i(...)` | lineárna rampa |
 | `psu.ocp(b)`, `psu.ovp(b)`, `psu.beep(b)`, `psu.save(n)`, `psu.recall(n)` | funkcie, pamäte 1–5 |
+| `psu.set_ocp(A)`, `psu.set_ovp(V)`, `psu.ocp_limit`, `psu.ovp_limit` | prahy ochrán (KA3005PS) |
 | `psu.log_start("nazov", interval)`, `psu.log_stop()` | CSV logovanie |
 | `psu.raw("VSET1:05.00")`, `psu.raw("STATUS?", 1)` | ľubovoľný príkaz |
 | `psu.safe_off = False` | nevypínať výstup pri chybe / zastavení (predvolene sa vypne) |
@@ -126,6 +129,7 @@ hlási prechod CC → CV a vypne výstup pri časovom limite, prekročení kapac
 ## Protokol zdroja (pre konzolu)
 `*IDN?`, `STATUS?` (bajt: bit0 CV/CC, bit4 beep, bit5 OCP, bit6 výstup, bit7 OVP), `VSET1:xx.xx`, `VSET1?`,
 `ISET1:x.xxx`, `ISET1?`, `VOUT1?`, `IOUT1?`, `OUT0/1`, `OCP0/1`, `OVP0/1`, `BEEP0/1`, `SAV1-5`, `RCL1-5`.
+KA3005PS navyše prahy ochrán: `OCP1:x.xxx`, `OCP1?`, `OVP1:xx.xx`, `OVP1?` (nezdokumentované, overené na V1.5).
 9600 Bd, bez ukončovacieho znaku. Zdroj potrebuje ~50–100 ms medzi príkazmi; driver to rieši sám.
 Pozor: k zdroju smie pristupovať len jeden program naraz, inak sa odpovede miešajú a zdroj resetuje USB.
 

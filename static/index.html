@@ -84,15 +84,27 @@
       </div>
 
       <div class="group">
+        <h3>OCHRANY <small>prah = hodnota, pri ktorej zdroj vypne výstup</small></h3>
+        <div class="protrow">
+          <button class="key tog" id="btnOCP">OCP <span class="st">VYP</span></button>
+          <label>prah <input id="inOCP" type="number" step="0.001" min="0" max="5.1" value="5.100"> A</label>
+        </div>
+        <div class="protrow">
+          <button class="key tog" id="btnOVP">OVP <span class="st">VYP</span></button>
+          <label>prah <input id="inOVP" type="number" step="0.01" min="0" max="31" value="31.00"> V</label>
+        </div>
+        <div id="limitsNote" class="muted" hidden>Tento firmvér nevie nastaviť prah cez USB – prah = nastavené U/I.</div>
+      </div>
+
+      <div class="group">
         <h3>FUNKCIE</h3>
         <div class="fkeys">
-          <button class="key tog" id="btnOCP">OCP</button>
-          <button class="key tog" id="btnOVP">OVP</button>
-          <button class="key tog" id="btnBEEP">BEEP</button>
-          <button class="key tog" id="btnLOCK">LOCK</button>
-          <button class="key tog" id="btnMA">A/mA</button>
+          <button class="key tog" id="btnBEEP">BEEP <span class="st">VYP</span></button>
+          <button class="key tog" id="btnLOCK">LOCK <span class="st">VYP</span></button>
+          <button class="key tog" id="btnMA">A/mA <span class="st">A</span></button>
         </div>
-        <button class="key onoff" id="btnOUT">ON / OFF</button>
+        <button class="key onoff" id="btnOUT">VÝSTUP: OFF</button>
+        <div id="scriptLock" class="scriptlock" hidden>⏳ Beží skript <b id="scriptLockName"></b> – panel je zamknutý. <button class="key sm stop" id="btnStopScript">■ Stop</button></div>
       </div>
 
       <div class="group adjust">
@@ -218,6 +230,8 @@ psu.wait(2.5)          # pauza (zastaviteľná)
 psu.ramp_v(0, 12, 10)  # rampa 0→12 V za 10 s
 psu.ramp_i(0, 1, 5)
 psu.ocp(True) psu.ovp(True) psu.beep(False)
+psu.set_ocp(1.5) psu.set_ovp(5.5)   # prahy ochrán
+psu.ocp_limit / psu.ovp_limit
 psu.save(1) psu.recall(1)
 psu.raw("VSET1:05.00")
 psu.log("text") / print("text")

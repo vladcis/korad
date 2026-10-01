@@ -94,9 +94,11 @@ class Controller:
             "connected": False, "port": None, "idn": None, "error": None,
             "vset": 0.0, "iset": 0.0, "vout": 0.0, "iout": 0.0, "power": 0.0,
             "mode": "CV", "output": False, "ocp": False, "ovp": False, "beep": False,
+            "ocp_limit": None, "ovp_limit": None, "limits_supported": True,
             "t": 0.0,
         }
         self.cmd_history = []
+        self._last_out_cmd = 0.0
         self.auto_reconnect = False
         self._last_reconnect = 0.0
         self._n = 0
@@ -107,8 +109,10 @@ class Controller:
 
     # --- udalosti ---
     def _on_command(self, cmd, resp):
-        if cmd in ("VOUT1?", "IOUT1?", "STATUS?", "VSET1?", "ISET1?"):
+        if cmd in ("VOUT1?", "IOUT1?", "STATUS?", "VSET1?", "ISET1?", "OCP1?", "OVP1?"):
             return
+        if cmd in ("OUT0", "OUT1"):
+            self._last_out_cmd = time.time()
         e = {"t": time.time(), "cmd": cmd, "resp": resp}
         self.cmd_history.append(e)
         if len(self.cmd_history) > 300:
@@ -171,9 +175,17 @@ class Controller:
             self._refresh_set.clear()
             self.state["vset"] = d.get_vset()
             self.state["iset"] = d.get_iset()
+            if self.state["limits_supported"]:
+                ocp_l, ovp_l = d.get_ocp_limit(), d.get_ovp_limit()
+                if ocp_l is None or ovp_l is None:
+                    self.state["limits_supported"] = False  # starší firmvér bez OCP1?/OVP1?
+                else:
+                    self.state.update(ocp_limit=ocp_l, ovp_limit=ovp_l)
         vout = d.get_vout()
         iout = d.get_iout()
         st = d.status()
+        if self.state["output"] and not st["output"] and time.time() - self._last_out_cmd > 2:
+            self.events.add("Výstup vypol samotný zdroj (ochrana OCP/OVP alebo tlačidlo na paneli)", "warn")
         self.state.update(
             vout=vout, iout=iout, power=round(vout * iout, 3),
             mode="CV" if st["cv"] else "CC",
@@ -271,6 +283,20 @@ app.add_url_rule("/api/output", view_func=_bool_route("Výstup", lambda on: ctl.
 app.add_url_rule("/api/ocp", view_func=_bool_route("OCP", lambda on: ctl.dev.ocp(on)), methods=["POST"])
 app.add_url_rule("/api/ovp", view_func=_bool_route("OVP", lambda on: ctl.dev.ovp(on)), methods=["POST"])
 app.add_url_rule("/api/beep", view_func=_bool_route("Beep", lambda on: ctl.dev.beep(on)), methods=["POST"])
+
+
+@app.post("/api/limits")
+def api_limits():
+    j = request.json or {}
+    out = {}
+    if j.get("ocp") is not None:
+        out["ocp_limit"] = ctl.dev.set_ocp_limit(j["ocp"])
+        ctl.events.add(f"Prah OCP {out['ocp_limit']:.3f} A")
+    if j.get("ovp") is not None:
+        out["ovp_limit"] = ctl.dev.set_ovp_limit(j["ovp"])
+        ctl.events.add(f"Prah OVP {out['ovp_limit']:.2f} V")
+    ctl.refresh_set()
+    return ok(**out)
 
 
 @app.post("/api/memory/<int:slot>/<action>")

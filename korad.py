@@ -164,6 +164,26 @@ class Korad:
     def get_iout(self):
         return self._float(self._tx("IOUT1?", 5), "IOUT1?")
 
+    def get_ocp_limit(self):
+        """Prah OCP [A] (KA3005PS; staršie firmvéry neodpovedajú -> None)."""
+        r = self._tx("OCP1?", 5)
+        return self._float(r, "OCP1?") if r.strip() else None
+
+    def get_ovp_limit(self):
+        """Prah OVP [V]."""
+        r = self._tx("OVP1?", 5)
+        return self._float(r, "OVP1?") if r.strip() else None
+
+    def set_ocp_limit(self, amps):
+        amps = max(0.0, min(5.1, float(amps)))
+        self._tx(f"OCP1:{amps:05.3f}")
+        return amps
+
+    def set_ovp_limit(self, volts):
+        volts = max(0.0, min(31.0, float(volts)))
+        self._tx(f"OVP1:{volts:05.2f}")
+        return volts
+
     def status(self):
         b = self._tx("STATUS?", 1)
         if not b:

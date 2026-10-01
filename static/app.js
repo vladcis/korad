@@ -68,6 +68,10 @@ function setSeg(id, text, digits) {
 const ui = { lock: false, mA: false, memSel: 0, editingV: false, editingI: false, lastState: null };
 const chart = { data: [], win: 60, showP: false };
 
+function setTog(id, on, label) {
+  const b = $('#' + id); b.classList.toggle('on', !!on);
+  const st = b.querySelector('.st'); if (st) st.textContent = label || (on ? 'ZAP' : 'VYP');
+}
 function led(id, on, green) { const e = $('#' + id); e.classList.toggle('on', !!on); e.classList.toggle('green', !!green); }
 
 function applyState(s) {
@@ -87,10 +91,13 @@ function applyState(s) {
   setSeg('segP', s.output ? (s.power < 10 ? s.power.toFixed(2) : s.power < 100 ? s.power.toFixed(2) : s.power.toFixed(1)) : '-OFF', 4);
   led('ledCV', s.output && s.mode === 'CV'); led('ledCC', s.output && s.mode === 'CC');
   led('ledON', s.output, true); led('ledOCP', s.ocp); led('ledOVP', s.ovp); led('ledBEEP', s.beep);
-  led('ledLOCK', ui.lock);
-  $('#btnOUT').classList.toggle('on', s.output);
-  $('#btnOCP').classList.toggle('on', s.ocp); $('#btnOVP').classList.toggle('on', s.ovp);
-  $('#btnBEEP').classList.toggle('on', s.beep);
+  led('ledLOCK', ui.lock || ui.scriptRunning);
+  $('#btnOUT').classList.toggle('on', s.output); $('#btnOUT').textContent = s.output ? 'VÝSTUP: ON  (vypnúť)' : 'VÝSTUP: OFF  (zapnúť)';
+  setTog('btnOCP', s.ocp); setTog('btnOVP', s.ovp); setTog('btnBEEP', s.beep);
+  if (s.limits_supported !== false) {
+    if (!ui.editingOCP && s.ocp_limit != null) $('#inOCP').value = s.ocp_limit.toFixed(3);
+    if (!ui.editingOVP && s.ovp_limit != null) $('#inOVP').value = s.ovp_limit.toFixed(2);
+  } else { $('#limitsNote').hidden = false; $('#inOCP').disabled = $('#inOVP').disabled = true; }
   if (!ui.editingV) { $('#inV').value = s.vset.toFixed(2); $('#slV').value = s.vset; }
   if (!ui.editingI) { $('#inI').value = s.iset.toFixed(3); $('#slI').value = s.iset; }
   chart.data.push({ t: s.t, v: s.vout, i: s.iout, p: s.power });
@@ -168,7 +175,19 @@ $('#btnConnect').onclick = () => guard(api('/connect', 'POST', { port: $('#portS
 $('#btnDisconnect').onclick = () => guard(api('/disconnect', 'POST'));
 
 // ---------------------------------------------------------------- ovládanie
-function locked() { if (ui.lock) { toast('Ovládanie je zamknuté (LOCK)'); return true; } return false; }
+function locked() {
+  if (ui.scriptRunning) { toast('Beží skript – panel je zamknutý. Zastav ho tlačidlom Stop.'); return true; }
+  if (ui.lock) { toast('Ovládanie je zamknuté (LOCK)'); return true; }
+  return false;
+}
+function applyLocks() {
+  const lk = ui.lock || ui.scriptRunning;
+  led('ledLOCK', lk);
+  $('.controls').classList.toggle('locked', !!ui.scriptRunning);
+  $('#scriptLock').hidden = !ui.scriptRunning;
+  setTog('btnLOCK', ui.lock, ui.scriptRunning ? 'SKRIPT' : undefined);
+}
+$('#btnStopScript').onclick = () => guard(api('/scripts/stop', 'POST'));
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 async function setV(v) { if (locked()) return; v = clamp(+v, 0, 30); $('#inV').value = v.toFixed(2); $('#slV').value = v; await guard(api('/set', 'POST', { v })); }
 async function setI(i) { if (locked()) return; i = clamp(+i, 0, 5); $('#inI').value = i.toFixed(3); $('#slI').value = i; await guard(api('/set', 'POST', { i })); }
@@ -190,8 +209,15 @@ $('#btnOUT').onclick = () => { if (locked()) return; guard(api('/output', 'POST'
 $('#btnOCP').onclick = () => { if (locked()) return; guard(api('/ocp', 'POST', { on: !ui.lastState?.ocp })); };
 $('#btnOVP').onclick = () => { if (locked()) return; guard(api('/ovp', 'POST', { on: !ui.lastState?.ovp })); };
 $('#btnBEEP').onclick = () => { if (locked()) return; guard(api('/beep', 'POST', { on: !ui.lastState?.beep })); };
-$('#btnLOCK').onclick = () => { ui.lock = !ui.lock; $('#btnLOCK').classList.toggle('on', ui.lock); led('ledLOCK', ui.lock); };
-$('#btnMA').onclick = () => { ui.mA = !ui.mA; $('#btnMA').classList.toggle('on', ui.mA); segCache.segI = null; ui.lastState && applyState(ui.lastState); };
+$('#btnLOCK').onclick = () => { if (ui.scriptRunning) return locked(); ui.lock = !ui.lock; applyLocks(); };
+$('#btnMA').onclick = () => { ui.mA = !ui.mA; setTog('btnMA', ui.mA, ui.mA ? 'mA' : 'A'); segCache.segI = null; ui.lastState && applyState(ui.lastState); };
+// prahy OCP / OVP
+$('#inOCP').onfocus = () => ui.editingOCP = true; $('#inOVP').onfocus = () => ui.editingOVP = true;
+$('#inOCP').onblur = () => ui.editingOCP = false; $('#inOVP').onblur = () => ui.editingOVP = false;
+$('#inOCP').onchange = e => { if (locked()) return; guard(api('/limits', 'POST', { ocp: +e.target.value }).then(j => toast(`Prah OCP ${j.ocp_limit.toFixed(3)} A`, true))); };
+$('#inOVP').onchange = e => { if (locked()) return; guard(api('/limits', 'POST', { ovp: +e.target.value }).then(j => toast(`Prah OVP ${j.ovp_limit.toFixed(2)} V`, true))); };
+$('#inOCP').onkeydown = e => { if (e.key === 'Enter') e.target.blur(); };
+$('#inOVP').onkeydown = e => { if (e.key === 'Enter') e.target.blur(); };
 $$('.key.mem').forEach(b => b.onclick = async () => {
   if (locked()) return;
   const m = +b.dataset.m, save = $('#memSave').checked;
@@ -327,6 +353,7 @@ function onScriptEvent(d, initial) {
   const running = d.status === 'running';
   $('#scrRun').disabled = running; $('#scrStop').disabled = !running;
   led('ledSCR', running, true);
+  ui.scriptRunning = running; $('#scriptLockName').textContent = d.name || ''; applyLocks();
   const isSeq = (d.name || '').startsWith('program:');
   const sp = $('#seqStatus'); sp.textContent = isSeq ? d.status : 'idle'; sp.className = 'pill ' + (isSeq ? d.status : '');
   $('#seqRun').disabled = running; $('#seqStop').disabled = !(running && isSeq);
