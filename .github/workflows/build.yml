@@ -9,13 +9,13 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  pyinstaller:
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-22.04
-            asset: korad-linux-x86_64
+            asset: korad-linux-x86_64-web
             webview: "0"
           - os: windows-latest
             asset: korad-windows-x64.exe
@@ -60,9 +60,72 @@ jobs:
         with:
           name: ${{ matrix.asset }}
           path: ${{ matrix.asset }}
-      - name: Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+
+  deb:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build .deb
+        run: |
+          V=0.0.0~dev
+          case "$GITHUB_REF" in refs/tags/v*) V="${GITHUB_REF_NAME#v}";; esac
+          sh packaging/linux/build_deb.sh "$V"
+      - name: Smoke test (install, server, native window)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ./dist/korad_*_all.deb xvfb
+          KORAD_HOME=/tmp/kd korad --server --port 8592 --no-autoconnect >/tmp/s.log 2>&1 &
+          sleep 4
+          curl -sf http://127.0.0.1:8592/api/scripts | grep -q lib_batt
+          KORAD_HOME=/tmp/kd xvfb-run -a timeout 25 korad --no-autoconnect >/tmp/g.log 2>&1 || true
+          cat /tmp/g.log
+          ! grep -q "opening the browser" /tmp/g.log
+          grep -q '"GET / HTTP' /tmp/g.log
+      - uses: actions/upload-artifact@v4
         with:
-          files: ${{ matrix.asset }}
+          name: deb
+          path: dist/korad_*_all.deb
+
+  appimage:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install deps
+        run: |
+          sudo apt-get update -qq
+          # libraries PyInstaller bundles into the AppImage (+ xvfb for the test)
+          sudo apt-get install -y -qq xvfb libgl1-mesa-dri $(cat packaging/linux/appimage-build-deps.txt)
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller pywebview qtpy PyQt6 PyQt6-WebEngine
+      - name: Build AppImage
+        run: sh packaging/linux/build_appimage.sh
+      - name: Smoke test (native Qt window)
+        run: |
+          KORAD_HOME=/tmp/ka APPIMAGE_EXTRACT_AND_RUN=1 xvfb-run -a timeout 40 \
+            dist/korad-linux-x86_64.AppImage --no-autoconnect >/tmp/g.log 2>&1 || true
+          cat /tmp/g.log
+          ! grep -q "opening the browser" /tmp/g.log
+          grep -q '"GET / HTTP' /tmp/g.log
+      - uses: actions/upload-artifact@v4
+        with:
+          name: appimage
+          path: dist/korad-linux-x86_64.AppImage
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [pyinstaller, deb, appimage]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          body_path: packaging/RELEASE_NOTES.md
           generate_release_notes: true
+          files: assets/*

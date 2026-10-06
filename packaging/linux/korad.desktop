@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=KORAD KA3005P
+GenericName=Lab power supply control
+Comment=Control KORAD KA3005P/PS power supply over USB
+Exec=korad
+Icon=korad
+Terminal=false
+Categories=Development;Electronics;
+Keywords=power supply;PSU;KA3005P;Tenma;battery;charger;
