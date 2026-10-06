@@ -1,9 +1,9 @@
-"""Programovateľný test (sekvencia krokov U/I/čas) – generuje skript pre ScriptRunner."""
+"""Programmable test (sequence of U/I/time steps) - generates a script for ScriptRunner."""
 import json
 
 
 def sequence_code(steps, start=1, end=None, cycles=1):
-    """steps: list of {"v":..,"i":..,"t":..}; start/end sú 1-based čísla krokov; cycles 0 = nekonečne."""
+    """steps: list of {"v":..,"i":..,"t":..}; start/end are 1-based step numbers; cycles 0 = infinite."""
     clean = []
     for s in steps:
         try:

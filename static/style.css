@@ -145,7 +145,7 @@ th{position:sticky;top:0;background:#1a1b1e;color:var(--muted)}
   .sidebar{width:auto;flex:0 0 auto}
 }
 
-/* ---------- predvoľby / program ---------- */
+/* ---------- presets / program ---------- */
 .presetgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
 .presetgrid .key{padding:6px 4px;font-size:12px;font-family:ui-monospace,monospace;background:linear-gradient(#ffe9b0,#ffc247);border-color:#b8862b}
 .presetgrid .key.on{background:linear-gradient(#ffb37a,var(--accent))}

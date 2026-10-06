@@ -29,7 +29,7 @@ const SEG = {
   '8': 'abcdefg', '9': 'abcdfg', '-': 'g', ' ': '', 'O': 'abcdef', 'F': 'aefg', 'E': 'adefg', 'r': 'eg',
   'C': 'adef', 'L': 'def', 'P': 'abefg', 'H': 'bcefg', 'n': 'ceg', 'o': 'cdeg', 't': 'defg', 'U': 'bcdef',
 };
-// geometria segmentov v boxe 44x74
+// segment geometry in a 44x74 box
 const GEO = {
   a: 'M8,4 h26 l-5,6 h-16 z', g: 'M8,37 l5,-3 h16 l5,3 l-5,3 h-16 z', d: 'M8,70 l5,-6 h16 l5,6 z',
   b: 'M36,6 l6,-3 v30 l-6,4 l-4,-4 v-23 z', c: 'M36,41 l6,-4 v30 l-6,-3 l-4,-4 v-15 z',

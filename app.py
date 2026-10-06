@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Lokálny web server + API pre ovládanie zdroja KORAD KA3005P/PS.
+"""Local web server + API for controlling the KORAD KA3005P/PS power supply.
 
-Spustenie:  python app.py [--port 8585] [--device /dev/ttyACM0] [--host 127.0.0.1]
-Potom otvor http://127.0.0.1:8585
+Usage:  python app.py [--port 8585] [--device /dev/ttyACM0] [--host 127.0.0.1]
+Then open http://127.0.0.1:8585
 """
 import argparse
 import collections
@@ -23,13 +23,13 @@ from scripting import ScriptRunner
 from sequencer import sequence_code
 
 BASE = os.path.dirname(os.path.abspath(__file__))
-FROZEN = bool(getattr(sys, "frozen", False))          # zabalené PyInstallerom
-BUNDLE = getattr(sys, "_MEIPASS", BASE)               # kde sú static/ a ukážkové scripts/
+FROZEN = bool(getattr(sys, "frozen", False))          # packaged with PyInstaller
+BUNDLE = getattr(sys, "_MEIPASS", BASE)               # where static/ and the example scripts/ live
 
 
 def _data_root():
-    """Priečinok s používateľskými dátami (skripty, logy, sekvencie).
-    Zo zdrojákov = priečinok projektu; zabalená aplikácia = používateľský profil (prepíše KORAD_HOME)."""
+    """Folder with user data (scripts, logs, sequences).
+    From source = the project folder; packaged app = the user profile (overridden by KORAD_HOME)."""
     env = os.environ.get("KORAD_HOME")
     if env:
         return os.path.abspath(env)
@@ -53,13 +53,13 @@ PRESETS_FILE = os.path.join(DATA_DIR, "presets.json")
 DEFAULT_PRESETS = [{"v": 3.3, "i": 1.0}, {"v": 5.0, "i": 1.0}, {"v": 9.0, "i": 1.0},
                    {"v": 12.0, "i": 2.0}, {"v": 24.0, "i": 2.0}, {"v": 30.0, "i": 5.0}]
 HISTORY_SECONDS = 3600  # server-side buffer for the trend chart (survives page refresh)
-POLL_INTERVAL = 0.5     # zdroj odpovedá pomaly (~80 ms/príkaz) a pri preťažení resetuje USB
-SET_REFRESH_EVERY = 3   # každý N-tý poll prečítaj aj VSET/ISET
-RECONNECT_EVERY = 3.0   # automatický pokus o znovupripojenie [s]
+POLL_INTERVAL = 0.5     # the PSU responds slowly (~80 ms/command) and resets its USB when overloaded
+SET_REFRESH_EVERY = 3   # every Nth poll also reads VSET/ISET
+RECONNECT_EVERY = 3.0   # automatic reconnect attempt [s]
 
 
 class Broker:
-    """Jednoduchý pub/sub pre SSE klientov."""
+    """Simple pub/sub for SSE clients."""
 
     def __init__(self):
         self.clients = set()
@@ -111,7 +111,7 @@ class Controller:
         self.poll_thread = threading.Thread(target=self._poll_loop, daemon=True, name="poller")
         self.poll_thread.start()
 
-    # --- udalosti ---
+    # --- events ---
     def _on_command(self, cmd, resp):
         if cmd in ("VOUT1?", "IOUT1?", "STATUS?", "VSET1?", "ISET1?", "OCP1?", "OVP1?"):
             return
@@ -126,12 +126,12 @@ class Controller:
     def refresh_set(self):
         self._refresh_set.set()
 
-    # --- pripojenie ---
+    # --- connection ---
     def connect(self, port=None, baud=None):
         if baud:
             self.dev.baud = int(baud)
         idn = self.dev.connect(port)
-        if HIDE_SN:  # KORAD_HIDE_SN=1 -> sériové číslo sa v UI nezobrazí (zdieľanie obrazovky, screenshoty)
+        if HIDE_SN:  # KORAD_HIDE_SN=1 -> serial number is hidden in the UI (screen sharing, screenshots)
             idn = re.sub(r"SN:\S+", "SN:••••••", idn)
         self.state.update(connected=True, port=self.dev.port, idn=idn, error=None)
         self.auto_reconnect = True
@@ -175,7 +175,7 @@ class Controller:
     def _poll_once(self):
         d = self.dev
         self._n += 1
-        # pri vypnutom výstupe displej ukazuje nastavené hodnoty -> čítaj ich častejšie
+        # with the output off the display shows the set values -> read them more often
         every = 1 if not self.state["output"] else SET_REFRESH_EVERY
         if self._refresh_set.is_set() or self._n % every == 0:
             self._refresh_set.clear()
@@ -184,7 +184,7 @@ class Controller:
             if self.state["limits_supported"]:
                 ocp_l, ovp_l = d.get_ocp_limit(), d.get_ovp_limit()
                 if ocp_l is None or ovp_l is None:
-                    self.state["limits_supported"] = False  # starší firmvér bez OCP1?/OVP1?
+                    self.state["limits_supported"] = False  # older firmware without OCP1?/OVP1?
                 else:
                     self.state.update(ocp_limit=ocp_l, ovp_limit=ovp_l)
         vout = d.get_vout()
@@ -230,7 +230,7 @@ def index():
     return send_from_directory(STATIC_DIR, "index.html")
 
 
-# --- stav / pripojenie ---
+# --- state / connection ---
 @app.get("/api/state")
 def api_state():
     return jsonify(state=ctl.state, script=ctl.script_status(), logger=ctl.logger.info(),
@@ -269,7 +269,7 @@ def api_disconnect():
     return ok()
 
 
-# --- ovládanie ---
+# --- control ---
 @app.post("/api/set")
 def api_set():
     j = request.json or {}
@@ -345,7 +345,7 @@ def api_commands():
     return jsonify(items=ctl.cmd_history[-200:])
 
 
-# --- skripty ---
+# --- scripts ---
 def _script_path(name):
     name = safe_name(name)
     if not name.endswith(".py"):
@@ -420,7 +420,7 @@ def api_script_status():
     return jsonify(ctl.script_status())
 
 
-# --- logovanie ---
+# --- logging ---
 @app.get("/api/logs")
 def api_logs():
     return jsonify(items=ctl.logger.list(), logger=ctl.logger.info())
@@ -473,7 +473,7 @@ def api_events():
     return jsonify(items=ctl.events.list(int(request.args.get("limit", 200))))
 
 
-# --- predvoľby U/I ---
+# --- U/I presets ---
 def _load_json(path, default):
     try:
         with open(path, encoding="utf-8") as f:
@@ -513,7 +513,7 @@ def api_preset_apply(n):
     return ok(**p)
 
 
-# --- programovateľný test (sekvencie) ---
+# --- programmable test (sequences) ---
 def _seq_path(name):
     name = safe_name(name)
     if not name.endswith(".json"):
@@ -587,7 +587,7 @@ def api_stream():
 
 # ---------------------------------------------------------------- main
 def _seed_scripts():
-    """Pri prvom spustení zabalenej aplikácie skopíruje ukážkové skripty do používateľského priečinka."""
+    """On first run of the packaged app, copies the example scripts into the user folder."""
     src = os.path.join(BUNDLE, "scripts")
     if not os.path.isdir(src) or os.path.abspath(src) == os.path.abspath(SCRIPTS_DIR):
         return

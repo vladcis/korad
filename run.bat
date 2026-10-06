@@ -1,5 +1,5 @@
 @echo off
-rem Spustenie zo zdrojakov na Windows: python 3.10+ a "pip install -r requirements.txt"
+rem Run from source on Windows: python 3.10+ and "pip install -r requirements.txt"
 cd /d "%~dp0"
 python desktop.py --browser %*
 pause

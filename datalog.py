@@ -1,4 +1,4 @@
-"""CSV logovanie meraní a záznam udalostí."""
+"""CSV measurement logging and event log."""
 import collections
 import csv
 import os
@@ -102,7 +102,7 @@ class DataLogger:
         if self.rows % 10 == 0:
             self.broker.publish("logger", self.info())
 
-    # --- súbory ---
+    # --- files ---
     def list(self):
         out = []
         for fn in sorted(os.listdir(self.folder), reverse=True):

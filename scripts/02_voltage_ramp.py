@@ -1,11 +1,11 @@
-# Rampa napätia 0 → 12 V za 10 s s logovaním do CSV.
+# Voltage ramp 0 → 12 V in 10 s with CSV logging.
 psu.set_i(1.0)
 psu.set_v(0)
 psu.on()
-psu.log_start("rampa", interval=0.25)
+psu.log_start("ramp", interval=0.25)
 psu.ramp_v(0, 12, 10, step=0.2)
 psu.wait(2)
 psu.ramp_v(12, 0, 5, step=0.2)
 psu.log_stop()
 psu.off()
-print("hotovo")
+print("done")

@@ -1,4 +1,4 @@
 flask>=3.0
 pyserial>=3.5
-# voliteľné – natívne desktop okno (desktop.py):
+# optional - native desktop window (desktop.py):
 # pywebview>=5.0

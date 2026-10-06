@@ -1,7 +1,7 @@
-"""Driver pre laboratórne zdroje KORAD KA3005P / KA3005PS (a kompatibilné) cez USB/RS232.
+"""Driver for KORAD KA3005P / KA3005PS (and compatible) lab power supplies over USB/RS232.
 
-Protokol: 9600 8N1, textové príkazy bez ukončovacieho znaku, napr. "VSET1:12.34".
-Stavový bajt (STATUS?): bit0 CV(1)/CC(0), bit4 beep, bit5 OCP, bit6 výstup, bit7 OVP.
+Protocol: 9600 8N1, text commands without a terminator, e.g. "VSET1:12.34".
+Status byte (STATUS?): bit0 CV(1)/CC(0), bit4 beep, bit5 OCP, bit6 output, bit7 OVP.
 """
 import threading
 import time
@@ -15,7 +15,7 @@ class KoradError(Exception):
 
 
 class Korad:
-    GAP = 0.08  # minimálna medzera medzi príkazmi [s] – zdroj pri rýchlej komunikácii resetuje USB
+    GAP = 0.08  # minimum gap between commands [s] – the PSU resets its USB on fast communication
 
     def __init__(self, port=None, baud=9600, timeout=1.0):
         self.port = port
@@ -27,14 +27,14 @@ class Korad:
         self.on_command = None  # callback(cmd: str, resp: str)
         self._last_tx = 0.0
 
-    # ---------- pripojenie ----------
+    # ---------- connection ----------
     @staticmethod
     def candidates():
-        """Sériové porty (Linux /dev/tty*, macOS /dev/cu.*, Windows COMx). Korad (Winbond 0416:5011) ide prvý."""
+        """Serial ports (Linux /dev/tty*, macOS /dev/cu.*, Windows COMx). Korad (Winbond 0416:5011) comes first."""
         ports = []
         for p in list_ports.comports():
             dev = p.device
-            if dev.startswith("/dev/tty.") :  # macOS: preferuj /dev/cu.*
+            if dev.startswith("/dev/tty.") :  # macOS: prefer /dev/cu.*
                 continue
             score = 0 if (p.vid == 0x0416 and p.pid == 0x5011) else (1 if (p.vid or "USB" in (p.hwid or "")) else 2)
             ports.append((score, dev, p.description or ""))
@@ -88,9 +88,9 @@ class Korad:
             self.ser = None
             self.idn = None
 
-    # ---------- nízka úroveň ----------
+    # ---------- low level ----------
     def _drain(self):
-        """Vyprázdni prípadné oneskorené odpovede, aby sa nepomiešali s ďalším príkazom."""
+        """Drains any late responses so they do not mix with the next command."""
         try:
             old = self.ser.timeout
             self.ser.timeout = 0.15
@@ -133,7 +133,7 @@ class Korad:
             return resp
 
     def raw(self, cmd, nbytes=0):
-        """Pošle ľubovoľný príkaz. nbytes=0 -> bez čakania na odpoveď (set), inak číta odpoveď."""
+        """Sends an arbitrary command. nbytes=0 -> no wait for a response (set), otherwise reads the response."""
         if nbytes:
             return self._tx(cmd, until_timeout=True)
         return self._tx(cmd)
@@ -148,7 +148,7 @@ class Korad:
                     self._drain()
             raise KoradError(f"Invalid response to {what}: {s!r}") from e
 
-    # ---------- čítanie ----------
+    # ---------- reading ----------
     def idn_query(self):
         return self._tx("*IDN?", until_timeout=True).strip()
 
@@ -165,12 +165,12 @@ class Korad:
         return self._float(self._tx("IOUT1?", 5), "IOUT1?")
 
     def get_ocp_limit(self):
-        """Prah OCP [A] (KA3005PS; staršie firmvéry neodpovedajú -> None)."""
+        """OCP threshold [A] (KA3005PS; older firmware does not respond -> None)."""
         r = self._tx("OCP1?", 5)
         return self._float(r, "OCP1?") if r.strip() else None
 
     def get_ovp_limit(self):
-        """Prah OVP [V]."""
+        """OVP threshold [V]."""
         r = self._tx("OVP1?", 5)
         return self._float(r, "OVP1?") if r.strip() else None
 
@@ -198,7 +198,7 @@ class Korad:
             "raw": v,
         }
 
-    # ---------- nastavenie ----------
+    # ---------- settings ----------
     def set_v(self, volts):
         volts = max(0.0, min(31.0, float(volts)))
         self._tx(f"VSET1:{volts:05.2f}")

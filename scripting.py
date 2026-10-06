@@ -1,7 +1,7 @@
-"""Spúšťanie používateľských skriptov (Python) s objektom `psu`.
+"""Runs user scripts (Python) with a `psu` object.
 
-Skript beží vo vlastnom vlákne. Zastavenie sa vyhodnotí pri každom volaní psu.* alebo psu.wait().
-Pri chybe alebo zastavení sa výstup zdroja vypne (ak psu.safe_off == True, čo je predvolené).
+The script runs in its own thread. A stop request is checked on every psu.* or psu.wait() call.
+On error or stop the PSU output is switched off (if psu.safe_off == True, which is the default).
 """
 import math
 import os
@@ -17,13 +17,13 @@ class ScriptStopped(Exception):
 
 
 class ScriptPSU:
-    """API dostupné skriptom ako `psu`."""
+    """API available to scripts as `psu`."""
 
     def __init__(self, runner):
         self._r = runner
         self.safe_off = True
 
-    # --- interné ---
+    # --- internal ---
     def _check(self):
         if self._r.stop_event.is_set():
             raise ScriptStopped()
@@ -32,7 +32,7 @@ class ScriptPSU:
         self._check()
         return self._r.dev
 
-    # --- nastavenie ---
+    # --- settings ---
     def set_v(self, volts):
         v = self._dev().set_v(volts)
         self._r.ctl.refresh_set()
@@ -53,7 +53,7 @@ class ScriptPSU:
         self._dev().output(True)
 
     def off(self):
-        # vypnutie výstupu je povolené vždy, aj počas zastavovania skriptu (cleanup vo finally)
+        # switching the output off is always allowed, even while the script is stopping (cleanup in finally)
         self._r.dev.output(False)
 
     def output(self, on):
@@ -69,11 +69,11 @@ class ScriptPSU:
         self._dev().beep(bool(on))
 
     def set_ocp(self, amps):
-        """Prah OCP [A] (nezapína ochranu – na to je psu.ocp(True))."""
+        """OCP threshold [A] (does not enable the protection – use psu.ocp(True) for that)."""
         return self._dev().set_ocp_limit(amps)
 
     def set_ovp(self, volts):
-        """Prah OVP [V]."""
+        """OVP threshold [V]."""
         return self._dev().set_ovp_limit(volts)
 
     @property
@@ -94,7 +94,7 @@ class ScriptPSU:
     def raw(self, cmd, nbytes=0):
         return self._dev().raw(cmd, nbytes)
 
-    # --- čítanie ---
+    # --- reading ---
     @property
     def vout(self):
         return self._dev().get_vout()
@@ -121,11 +121,11 @@ class ScriptPSU:
 
     @property
     def state(self):
-        """Posledný stav z pollera (bez komunikácie so zdrojom)."""
+        """Last state from the poller (no communication with the PSU)."""
         self._check()
         return dict(self._r.ctl.state)
 
-    # --- čas ---
+    # --- time ---
     def wait(self, seconds):
         end = time.monotonic() + float(seconds)
         while True:
@@ -138,7 +138,7 @@ class ScriptPSU:
     sleep = wait
 
     def ramp_v(self, start, end, duration, step=0.1):
-        """Lineárny nábeh napätia zo start na end za duration sekúnd."""
+        """Linear voltage ramp from start to end over duration seconds."""
         self._ramp(self.set_v, start, end, duration, step)
 
     def ramp_i(self, start, end, duration, step=0.01):
@@ -153,7 +153,7 @@ class ScriptPSU:
             if k < n:
                 self.wait(dt)
 
-    # --- výstup / logovanie ---
+    # --- output / logging ---
     def log(self, *args):
         self._check()
         self._r.emit(" ".join(str(a) for a in args))
@@ -168,13 +168,13 @@ class ScriptPSU:
         self._r.ctl.logger.stop()
 
     def elapsed(self):
-        """Sekundy od štartu skriptu."""
+        """Seconds since the script started."""
         return time.time() - self._r.started
 
 
 class ScriptRunner:
     def __init__(self, ctl):
-        self.ctl = ctl  # Controller (app.py) s .dev, .state, .logger, .broker, .refresh_set
+        self.ctl = ctl  # Controller (app.py) with .dev, .state, .logger, .broker, .refresh_set
         self.thread = None
         self.stop_event = threading.Event()
         self.name = None
@@ -231,7 +231,7 @@ class ScriptRunner:
     def _run(self, code):
         psu = ScriptPSU(self)
         tmod = types.SimpleNamespace(**{k: getattr(time, k) for k in dir(time) if not k.startswith("_")})
-        tmod.sleep = psu.wait  # aby bolo možné skript zastaviť aj počas time.sleep()
+        tmod.sleep = psu.wait  # so the script can be stopped even during time.sleep()
         env = {
             "__name__": "__script__",
             "__builtins__": __builtins__,
@@ -242,7 +242,7 @@ class ScriptRunner:
             "math": math,
         }
         self.ctl.events.add(f"Script '{self.name}' started")
-        # skripty môžu importovať knižnice zo scripts/ (lib_*.py); pri každom behu sa načítajú nanovo
+        # scripts can import libraries from scripts/ (lib_*.py); they are reloaded on every run
         sdir = getattr(self.ctl, "scripts_dir", None)
         if sdir and sdir not in sys.path:
             sys.path.insert(0, sdir)
@@ -262,7 +262,7 @@ class ScriptRunner:
             self.emit("ERROR:\n" + self.error)
             self._safe_off(psu)
         finally:
-            self.ctl.events.add(f"Skript '{self.name}' – {self.status}")
+            self.ctl.events.add(f"Script '{self.name}' – {self.status}")
             self.ctl.broker.publish("script", {"status": self.status, "name": self.name, "error": self.error})
 
     def _safe_off(self, psu):

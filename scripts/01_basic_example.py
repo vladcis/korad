@@ -1,4 +1,4 @@
-# Základný príklad: nastav 5 V / 0.5 A, zapni, zmeraj, vypni.
+# Basic example: set 5 V / 0.5 A, switch on, measure, switch off.
 psu.set_v(5.0)
 psu.set_i(0.5)
 psu.on()

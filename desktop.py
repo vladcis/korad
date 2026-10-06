@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Desktop verzia (Linux / macOS / Windows): spustí lokálny server a otvorí UI v natívnom okne.
+"""Desktop version (Linux / macOS / Windows): starts a local server and opens the UI in a native window.
 
-Vyžaduje: pip install pywebview   (Linux navyše: python3-gi gir1.2-webkit2-4.1 alebo Qt)
-Bez pywebview sa otvorí predvolený prehliadač.
+Requires: pip install pywebview   (Linux additionally: python3-gi gir1.2-webkit2-4.1 or Qt)
+Without pywebview the default browser is opened.
 """
 import argparse
 import os
@@ -15,7 +15,7 @@ import app as korad_app
 
 
 def _redirect_output():
-    """V zabalenej GUI aplikácii (bez konzoly) presmeruje výpisy do súboru logs/app.log."""
+    """In a packaged GUI app (no console), redirects output to logs/app.log."""
     if sys.stdout is not None and sys.stderr is not None:
         return
     os.makedirs(korad_app.LOGS_DIR, exist_ok=True)
@@ -61,9 +61,9 @@ def main():
             webview.start()
             return
         except ImportError:
-            print("pywebview nie je nainštalované (pip install pywebview) – otváram prehliadač.", file=sys.stderr)
-        except Exception as e:  # noqa: BLE001  (napr. chýbajúci WebKitGTK na Linuxe)
-            print(f"Natívne okno sa nepodarilo otvoriť ({e}) – otváram prehliadač.", file=sys.stderr)
+            print("pywebview is not installed (pip install pywebview) - opening the browser.", file=sys.stderr)
+        except Exception as e:  # noqa: BLE001  (e.g. missing WebKitGTK on Linux)
+            print(f"Native window could not be opened ({e}) - opening the browser.", file=sys.stderr)
     webbrowser.open(url)
     try:
         t.join()
