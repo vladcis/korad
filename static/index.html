@@ -62,6 +62,26 @@
         <span class="led-lbl"><i id="ledSCR" class="led"></i>SCRIPT</span>
         <span id="dispErr" class="disp-err"></span>
       </div>
+      <div class="trend">
+        <div class="trend-head">
+          <h3>Trend</h3>
+          <select id="chartWin" title="Time window">
+            <option value="30">30 s</option><option value="60" selected>1 min</option>
+            <option value="300">5 min</option><option value="900">15 min</option><option value="3600">1 h</option>
+          </select>
+          <label class="chk"><input type="checkbox" id="chShowP"> show P</label>
+          <span class="legend"><i style="background:#ff6a3d"></i>U <i style="background:#3ec8ff"></i>I <i style="background:#9cff57"></i>P</span>
+          <span class="spacer"></span>
+          <span class="qlog">
+            <input id="qlogName" placeholder="log name" value="measurement">
+            <button class="key sm" id="qlogBtn">● Log</button>
+            <span id="qlogInfo" class="muted"></span>
+          </span>
+          <button class="key sm" id="chartClear" title="Clear the trend">Clear</button>
+          <button class="key sm" id="trendPop" title="Open the trend in a separate window">⧉</button>
+        </div>
+        <div class="trend-plot"><canvas id="chart" data-fill="1"></canvas></div>
+      </div>
     </div>
 
     <div class="controls">
@@ -155,27 +175,6 @@
         </div>
       </div>
     </div>
-  </section>
-
-  <section class="chartbox">
-    <div class="chart-head">
-      <h3>Trend</h3>
-      <label>window
-        <select id="chartWin">
-          <option value="30">30 s</option><option value="60" selected>1 min</option>
-          <option value="300">5 min</option><option value="900">15 min</option><option value="3600">1 h</option>
-        </select></label>
-      <label class="chk"><input type="checkbox" id="chShowP"> power</label>
-      <button class="key sm" id="chartClear">Clear</button>
-      <span class="legend"><i style="background:#ff6a3d"></i>U [V] <i style="background:#3ec8ff"></i>I [A] <i style="background:#9cff57"></i>P [W]</span>
-      <span class="spacer"></span>
-      <span class="qlog">
-        <input id="qlogName" placeholder="log name" value="measurement">
-        <button class="key sm" id="qlogBtn">● Log</button>
-        <span id="qlogInfo" class="muted"></span>
-      </span>
-    </div>
-    <canvas id="chart" height="220"></canvas>
   </section>
 </main>
 

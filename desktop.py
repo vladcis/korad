@@ -30,6 +30,17 @@ def free_port():
         return s.getsockname()[1]
 
 
+class Api:
+    """Exposed to the page as window.pywebview.api."""
+
+    def __init__(self, url):
+        self._url = url
+
+    def open_trend(self):
+        import webview
+        webview.create_window("KORAD – trend", self._url + "/?view=trend", width=1100, height=520, min_size=(500, 260))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--device", default=None)
@@ -57,7 +68,8 @@ def main():
     if not a.browser:
         try:
             import webview  # pywebview
-            webview.create_window("KORAD KA3005P", url, width=1280, height=860, min_size=(900, 600))
+            webview.create_window("KORAD KA3005P", url, width=1280, height=860, min_size=(900, 600),
+                                  js_api=Api(url))
             webview.start()
             return
         except ImportError:

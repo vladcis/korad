@@ -110,8 +110,10 @@ function applyState(s) {
 // ---------------------------------------------------------------- chart
 function drawChart(cv, data, opt) {
   const dpr = window.devicePixelRatio || 1;
-  const W = cv.clientWidth, H = cv.height / (cv._dpr || 1) || 220;
-  if (cv.width !== W * dpr) { cv.width = W * dpr; cv.height = H * dpr; cv._dpr = dpr; }
+  // data-fill canvas takes its size from CSS, the others keep their height attribute
+  const W = cv.clientWidth, H = cv.dataset.fill ? cv.clientHeight : cv.height / (cv._dpr || 1) || 220;
+  if (!W || !H) return;
+  if (cv.width !== W * dpr || cv.height !== H * dpr) { cv.width = W * dpr; cv.height = H * dpr; cv._dpr = dpr; }
   const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0);
   g.clearRect(0, 0, W, H);
   const L = 46, R = opt.showP ? 92 : 46, T = 10, B = 24, pw = W - L - R, ph = H - T - B;
@@ -147,6 +149,15 @@ $('#chartWin').onchange = e => chart.win = +e.target.value;
 $('#chShowP').onchange = e => chart.showP = e.target.checked;
 $('#chartClear').onclick = () => chart.data = [];
 window.addEventListener('resize', () => ui.lastState && applyState(ui.lastState));
+// trend in its own window: native pywebview window in the desktop app, popup in the browser
+$('#trendPop').onclick = () => {
+  if (window.pywebview && window.pywebview.api && window.pywebview.api.open_trend) window.pywebview.api.open_trend();
+  else window.open('/?view=trend', 'korad-trend', 'popup,width=1100,height=520');
+};
+if (new URLSearchParams(location.search).get('view') === 'trend') {
+  document.body.classList.add('trend-view');
+  document.title = 'KORAD – trend';
+}
 
 // ---------------------------------------------------------------- SSE
 function connectStream() {
