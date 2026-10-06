@@ -16,6 +16,7 @@ import time
 
 from flask import Flask, Response, jsonify, request, send_file, send_from_directory
 
+import charging
 import examples
 from datalog import DataLogger, EventLog, safe_name
 from korad import Korad, KoradError
@@ -92,6 +93,7 @@ class Controller:
         self.events = EventLog(os.path.join(LOGS_DIR, "events.log"), self.broker)
         self.logger = DataLogger(LOGS_DIR, self.broker)
         self.scripts = ScriptRunner(self)
+        self.charge = None  # targets of the last charge started from the Charge tab
         self.scripts_dir = SCRIPTS_DIR
         self.state = {
             "connected": False, "port": None, "idn": None, "error": None,
@@ -233,7 +235,7 @@ def index():
 # --- state / connection ---
 @app.get("/api/state")
 def api_state():
-    return jsonify(state=ctl.state, script=ctl.script_status(), logger=ctl.logger.info(),
+    return jsonify(state=ctl.state, script=ctl.script_status(), logger=ctl.logger.info(), charge=ctl.charge,
                    paths={"home": HOME, "scripts": SCRIPTS_DIR, "logs": LOGS_DIR})
 
 
@@ -561,6 +563,33 @@ def api_sequence_run():
     except (ValueError, RuntimeError) as e:
         return err(e, 409)
     return ok(runner=ctl.script_status(), code=code)
+
+
+# --- charging (Charge tab) ---
+@app.get("/api/charge/profiles")
+def api_charge_profiles():
+    return jsonify(profiles=charging.PROFILES)
+
+
+@app.post("/api/charge/preview")
+def api_charge_preview():
+    try:
+        return ok(**charging.build(request.json or {}))
+    except charging.ChargeError as e:
+        return err(e)
+
+
+@app.post("/api/charge/start")
+def api_charge_start():
+    try:
+        b = charging.build(request.json or {})
+        ctl.scripts.start("charge:" + b["name"], b["code"])
+        ctl.charge = dict(b["targets"], name=b["name"], started=time.time())   # for the live estimate in the UI
+    except charging.ChargeError as e:
+        return err(e)
+    except RuntimeError as e:
+        return err(e, 409)
+    return ok(runner=ctl.script_status(), **b)
 
 
 # --- SSE ---

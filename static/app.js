@@ -20,6 +20,23 @@ function toast(msg, ok = false) {
   clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, ok ? 1800 : 4000);
 }
 function guard(p) { return p.catch(e => toast(e.message)); }
+const esc = x => String(x).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+// confirmation dialog; check = label of a box that must be ticked before OK is enabled
+function confirmDialog({ title, body = '', check = '', okText = 'OK' }) {
+  return new Promise(resolve => {
+    const m = $('#modal'), ok = $('#mdOk'), cb = $('#mdCheck');
+    $('#mdTitle').textContent = title; $('#mdBody').innerHTML = body; ok.textContent = okText;
+    $('#mdCheckRow').hidden = !check; $('#mdCheckLbl').textContent = check; cb.checked = false;
+    ok.disabled = !!check; cb.onchange = () => ok.disabled = !cb.checked;
+    const done = v => { m.hidden = true; document.removeEventListener('keydown', key); resolve(v); };
+    const key = e => { if (e.key === 'Escape') done(false); if (e.key === 'Enter' && !ok.disabled) done(true); };
+    ok.onclick = () => done(true); $('#mdCancel').onclick = () => done(false);
+    m.onclick = e => { if (e.target === m) done(false); };
+    document.addEventListener('keydown', key);
+    m.hidden = false; (check ? cb : ok).focus();
+  });
+}
+const sumTable = rows => '<table class="chgsum">' + rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('') + '</table>';
 const fmtT = t => new Date(t * 1000).toLocaleTimeString('en-GB');
 const fmtDT = t => new Date(t * 1000).toLocaleString('en-GB');
 
@@ -128,6 +145,7 @@ function applyState(s) {
   const cut = s.t - 3700;
   while (chart.data.length && chart.data[0].t < cut) chart.data.shift();
   drawTrend();
+  chgLive(s);
 }
 
 // ---------------------------------------------------------------- chart
@@ -209,7 +227,10 @@ $('#chart').addEventListener('wheel', e => {
 }, { passive: false });
 $('#chart').ondblclick = () => { chart.span = chart.win; chart.end = null; drawTrend(); };
 $('#chartWin').onchange = e => { chart.win = +e.target.value; chart.span = chart.win; chart.end = null; drawTrend(); };
-$('#chShowP').onchange = e => { chart.showP = e.target.checked; drawTrend(); };
+$('#legP').onclick = () => {
+  chart.showP = !chart.showP; $('#chShowP').checked = chart.showP;
+  $('#legP').classList.toggle('off', !chart.showP); drawTrend();
+};
 $('#chartClear').onclick = () => { chart.data = []; chart.span = chart.win; chart.end = null; drawTrend(); };
 window.addEventListener('resize', () => ui.lastState && applyState(ui.lastState));
 // desktop app: closing the window while a script runs (called from desktop.py)
@@ -226,6 +247,192 @@ if (new URLSearchParams(location.search).get('view') === 'trend') {
   document.body.classList.add('trend-view');
   document.title = 'Trend · KORAD';
 }
+
+// ---------------------------------------------------------------- charge
+const chg = { profiles: null, last: null, cur: null, lines: [], cv: [], maxSoc: 0 };
+const prof = () => chg.profiles[$('#chgChem').value];
+const opts = (sel, items, val) => { sel.innerHTML = items.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join(''); if (val != null) sel.value = val; };
+const setv = (id, v) => { $(id).value = v ?? ''; };
+async function loadCharge() {
+  if (chg.loading) { await chg.loading; return chgPreview(); }
+  chg.loading = api('/charge/profiles');
+  chg.profiles = (await chg.loading).profiles;
+  opts($('#chgChem'), Object.entries(chg.profiles).map(([k, p]) => [k, p.label]), 'liion');
+  chgApplyChem();
+}
+function chgApplyChem() {
+  const k = $('#chgChem').value, p = prof();
+  $$('#tab-charge [data-show]').forEach(e => e.hidden = !e.dataset.show.split(' ').includes(k));
+  $$('#tab-charge [data-hide]').forEach(e => e.hidden = e.dataset.hide.split(' ').includes(k));
+  opts($('#chgModel'), [['', 'Generic cell'], ...Object.entries(p.models || {}).map(([m, x]) => [m, x.label])], '');
+  if (p.types) opts(k === 'lead' ? $('#chgLeadType') : $('#chgNimhType'), Object.entries(p.types).map(([t, x]) => [t, x.label]));
+  opts($('#chgMode'), k === 'nimh' ? [['fast', 'Fast – −ΔV end'], ['slow', 'Slow – 0.1 C, 14 h']]
+    : [['full', `Full charge (${p.v_cell?.toFixed(2)} V/cell)`], ['storage', `Storage (${p.v_storage?.toFixed(2)} V/cell)`]], k === 'nimh' ? 'fast' : 'full');
+  const cs = $('#chgCellsSel'), ci = $('#chgCells');
+  cs.hidden = !p.cells_choices; ci.hidden = !!p.cells_choices;
+  if (p.cells_choices) opts(cs, p.cells_choices.map(c => [c, `${c * 2} V (${c} cells)`]), p.cells);
+  ci.max = p.cells_max || 24; setv('#chgCells', p.cells);
+  setv('#chgCap', p.capacity); setv('#chgC', p.c_rate); setv('#chgCut', p.cutoff_c); setv('#chgAh', p.ah_pct);
+  $('#chgC').max = p.c_max;
+  setv('#chgTime', p.timeout_h || ''); setv('#chgLog', p.log); setv('#chgFloatH', p.float_h);
+  $('#chgBal').checked = false;
+  if (p.v_range) { $('#chgVcell').min = p.v_range[0]; $('#chgVcell').max = p.v_range[1]; }
+  chgApplyType();
+  setv('#chgVcell', k === 'lead' ? p.types[$('#chgLeadType').value].v_cell : p.v_cell);
+  $('#chgHint').textContent = p.hint || '';
+  chgPreview();
+}
+function chgApplyType() {
+  const k = $('#chgChem').value, p = prof();
+  if (k === 'lead') { const t = p.types[$('#chgLeadType').value]; setv('#chgVcell', t.v_cell); setv('#chgVfloat', t.v_float); }
+}
+function chgApplyModel() {
+  const p = prof(), m = (p.models || {})[$('#chgModel').value];
+  const src = m || p;
+  setv('#chgCap', src.capacity); setv('#chgC', src.c_rate); setv('#chgCut', src.cutoff_c); setv('#chgTime', src.timeout_h || '');
+  $('#chgHint').textContent = (m && m.hint) || p.hint || '';
+  chgPreview();
+}
+function chgParams() {
+  const p = prof(), n = id => $(id).value === '' ? null : +$(id).value;
+  return {
+    chem: $('#chgChem').value, model: $('#chgModel').value, lead_type: $('#chgLeadType').value, nimh_type: $('#chgNimhType').value,
+    mode: $('#chgMode').value, cells: p.cells_choices ? +$('#chgCellsSel').value : n('#chgCells'),
+    capacity_mah: n('#chgCap'), c_rate: n('#chgC'), cutoff_c: n('#chgCut'), v_cell: n('#chgVcell'), v_float: n('#chgVfloat'),
+    float_h: n('#chgFloatH'), timeout_h: n('#chgTime'), ah_pct: n('#chgAh'), balancer: $('#chgBal').checked, log: $('#chgLog').value.trim(),
+  };
+}
+let chgT;
+function chgPreview() {
+  clearTimeout(chgT);
+  chgT = setTimeout(async () => {
+    const q = chgParams(), p = prof(), k = q.chem, cap = (q.capacity_mah || 0) / 1000;
+    // live helpers next to the fields
+    const slow = k === 'nimh' && q.mode === 'slow', storage = q.mode === 'storage' && p.v_storage;
+    $('#chgC').disabled = slow; if (slow) setv('#chgC', 0.1);
+    $('#chgVcell').disabled = !!storage; if (storage) setv('#chgVcell', p.v_storage);
+    $('#chgCA').textContent = cap ? `= ${(cap * (slow ? 0.1 : q.c_rate || 0)).toFixed(3)} A` : '';
+    $('#chgCutA').textContent = cap ? `= ${(cap * (q.cutoff_c || 0)).toFixed(3)} A` : '';
+    $('#chgCapInfo').textContent = cap ? `${cap.toFixed(3)} Ah` : '';
+    $('#chgAhInfo').textContent = cap ? `= ${(cap * (q.ah_pct || 0) / 100).toFixed(2)} Ah` : '';
+    $('#chgVInfo').textContent = q.cells && q.v_cell ? `= ${(q.cells * q.v_cell).toFixed(2)} V pack` : '';
+    $('#chgBalRow').classList.toggle('need', (q.cells || 0) > 1);
+    try {
+      const b = await api('/charge/preview', 'POST', q);
+      chg.last = b; $('#chgErr').hidden = true;
+      $('#chgSummary').innerHTML = sumTable(b.summary).replace(/^<table class="chgsum">|<\/table>$/g, '');
+      $('#chgWarn').innerHTML = b.warnings.map(w => `<li>${esc(w)}</li>`).join('');
+      $('#chgCode').textContent = b.code;
+      if (!$('#chgSaveName').value) $('#chgSaveName').placeholder = 'charge_' + (q.log || k);
+    } catch (e) {
+      chg.last = null; $('#chgErr').hidden = false; $('#chgErr').textContent = e.message;
+      $('#chgSummary').innerHTML = ''; $('#chgWarn').innerHTML = ''; $('#chgCode').textContent = '';
+    }
+    $('#chgStart').disabled = !chg.last || !!ui.scriptRunning;
+  }, 150);
+}
+// ---- live state of charge / time estimate while charging
+function interp(tab, x) {
+  if (x <= tab[0][0]) return tab[0][1];
+  for (let k = 1; k < tab.length; k++) if (x <= tab[k][0]) {
+    const [x0, y0] = tab[k - 1], [x1, y1] = tab[k]; return y0 + (y1 - y0) * (x - x0) / (x1 - x0);
+  }
+  return tab[tab.length - 1][1];
+}
+const fmtDur = h => { const m = Math.max(0, Math.round(h * 60)); return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')} min`; };
+function chgLive(s) {
+  const c = chg.cur, box = $('#chgLive');
+  const mine = c && ui.scriptName === 'charge:' + c.name;
+  box.hidden = !mine; if (!mine) return;
+  const running = ui.scriptRunning, L = chg.lines.map(l => l.line);
+  const now = s.t || Date.now() / 1000, el = (now - c.started) / 3600;
+  // start voltage ("Battery: 3.71 V") and charged Ah (last progress line, not the float stage)
+  const vStart = (L.map(l => l.match(/^Battery: ([\d.]+) V/)).find(Boolean) || [])[1];
+  const ahM = L.filter(l => l.startsWith('[') && !/float/i.test(l)).map(l => l.match(/([\d.]+) Ah/)).filter(Boolean).pop();
+  const ah = ahM ? +ahM[1] : 0;
+  const soc0 = vStart ? interp(c.soc.ocv, vStart / c.cells) : 0, cvAt = c.soc.cv_at;
+  const target = c.storage ? interp(c.soc.ocv, c.v_cell) : 100;
+  const inFloat = L.some(l => l.startsWith('=== Float'));
+  const pre = L.some(l => l.startsWith('Precharging')) && !L.some(l => /precharged/.test(l));
+  const inCV = c.method === 'cccv' && s.output && s.mode === 'CV' && !inFloat;
+  let soc = soc0 + ah * c.soc.eff / c.cap_ah * 100, eta = null, phase;
+  if (c.method === 'cccv' && !inCV && !inFloat) soc = Math.min(soc, c.storage ? target - 1 : cvAt - 1);
+  if (inCV) {
+    chg.cv.push([now, s.iout]); while (chg.cv.length && chg.cv[0][0] < now - 900) chg.cv.shift();
+    const r = Math.log(Math.max(s.iout, c.i_term) / c.i_term) / Math.log(c.i_charge / c.i_term);
+    // mean of Ah counting (depends on the start estimate) and the current decay (depends on the cell)
+    const socCV = target - (target - Math.min(cvAt, target)) * Math.min(1, Math.max(0, r));
+    soc = (Math.min(soc, target - 1) + socCV) / 2;
+    // current falls ~exponentially in CV: fit ln(I) over the last minutes -> time until I = cut-off
+    const pts = chg.cv.filter(p => p[1] > 0);
+    if (pts.length > 10 && pts[pts.length - 1][0] - pts[0][0] > 120) {
+      const n = pts.length, mt = pts.reduce((a, p) => a + p[0], 0) / n, ml = pts.reduce((a, p) => a + Math.log(p[1]), 0) / n;
+      const k = pts.reduce((a, p) => a + (p[0] - mt) * (Math.log(p[1]) - ml), 0) / pts.reduce((a, p) => a + (p[0] - mt) ** 2, 0);
+      if (k < 0) eta = Math.log(Math.max(s.iout, c.i_term) / c.i_term) / -k / 3600;
+    }
+    if (eta === null) eta = (target - soc) / 100 * c.cap_ah / (0.4 * c.i_charge);
+    phase = 'CV – topping off, the current is falling';
+  } else if (inFloat) {
+    const f0 = chg.lines.find(l => l.line.startsWith('=== Float'));
+    eta = Math.max(0, (c.float_h || 0) - (now - f0.t) / 3600); soc = 100;
+    phase = 'Float – holding the battery full';
+  } else if (c.method === 'nimh') {
+    eta = (target - soc) / 100 * c.cap_ah / (Math.max(s.iout, 0.01) * c.soc.eff);
+    phase = 'Constant current – waiting for the −ΔV peak';
+  } else {
+    const I = Math.max(s.iout, 0.01);
+    const toCv = Math.max(0, Math.min(cvAt, target) - soc) / 100 * c.cap_ah / (I * c.soc.eff);
+    eta = toCv + Math.max(0, target - cvAt) / 100 * c.cap_ah / (0.4 * c.i_charge) + (c.float_h || 0);
+    phase = pre ? 'Pre-charge – low current until the voltage recovers' : 'CC – constant current';
+  }
+  soc = Math.min(100, Math.max(0, soc));
+  if (running) chg.maxSoc = soc = Math.max(soc, chg.maxSoc);       // never goes backwards
+  const fin = !running, ok = ui.scriptStatus === 'done';
+  if (fin && ok) soc = target;
+  const left = c.timeout_h - el;
+  if (eta !== null) eta = Math.min(eta, Math.max(0, left));
+  const b = $('#chgBatt');
+  b.classList.toggle('charging', running && s.output);
+  b.dataset.lvl = soc < 20 ? 'low' : soc < 50 ? 'mid' : 'ok';
+  $('#chgFill').style.width = soc.toFixed(1) + '%';
+  $('#chgPct').textContent = `${Math.round(soc)} %`;
+  $('#chgEta').textContent = fin ? (ok ? (c.storage ? '✓ At storage voltage' : '✓ Charged') : `Charging ${ui.scriptStatus || 'stopped'}`)
+    : eta === null ? 'Estimating…'
+    : `Ready ≈ ${new Date((now + eta * 3600) * 1000).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} · in ${fmtDur(eta)}`;
+  $('#chgPhase').textContent = fin ? c.name : `${phase}${c.storage ? ` · target storage ≈ ${Math.round(target)} %` : ''}`;
+  $('#chgStats').innerHTML = sumTable([
+    ['Voltage / current', `${s.vout.toFixed(2)} V · ${s.iout.toFixed(3)} A`],
+    ['Charged', `${ah.toFixed(3)} Ah of ${c.cap_ah} Ah`],
+    ['Start voltage', vStart ? `${(+vStart).toFixed(2)} V (≈ ${Math.round(soc0)} %)` : '–'],
+    ['Elapsed', fmtDur(el)],
+    ['Time limit left', fin ? '–' : fmtDur(left)],
+  ]).replace(/^<table class="chgsum">|<\/table>$/g, '');
+}
+
+$('#chgChem').onchange = chgApplyChem;
+$('#chgModel').onchange = chgApplyModel;
+$('#chgLeadType').onchange = () => { chgApplyType(); chgPreview(); };
+$$('#tab-charge .chgform input, #tab-charge .chgform select').forEach(e => {
+  if (!['chgChem', 'chgModel', 'chgLeadType'].includes(e.id)) e.addEventListener('input', chgPreview);
+});
+$('#chgStart').onclick = async () => {
+  if (locked() || !chg.last) return;
+  const b = chg.last;
+  const body = sumTable(b.summary) + (b.warnings.length ? `<ul class="chgwarn">${b.warnings.map(w => `<li>${esc(w)}</li>`).join('')}</ul>` : '');
+  if (!await confirmDialog({ title: 'Start charging?', body, okText: '▶ Start charging',
+    check: 'I checked the polarity, the cell count and the battery type, and the battery is not damaged.' })) return;
+  $('#chgOut').textContent = ''; chg.lines = []; chg.cv = []; chg.maxSoc = 0;
+  const j = await guard(api('/charge/start', 'POST', chgParams()));
+  if (j) chg.cur = Object.assign({}, j.targets, { name: j.name, started: Date.now() / 1000 });
+};
+$('#chgStop').onclick = () => guard(api('/scripts/stop', 'POST'));
+$('#chgClear').onclick = () => $('#chgOut').textContent = '';
+$('#chgSave').onclick = async () => {
+  if (!chg.last) return;
+  const name = ($('#chgSaveName').value.trim() || $('#chgSaveName').placeholder).replace(/\.py$/, '') + '.py';
+  const j = await guard(api('/scripts/' + encodeURIComponent(name), 'PUT', { code: chg.last.code }));
+  if (j) toast('Saved ' + j.name + ' (Scripts tab)', true);
+};
 
 // ---------------------------------------------------------------- SSE
 function connectStream() {
@@ -374,6 +581,7 @@ $$('.tab').forEach(t => t.onclick = () => {
   $$('.tabpane').forEach(p => p.classList.toggle('active', p.id === 'tab-' + t.dataset.tab));
   if (t.dataset.tab === 'scripts') loadScripts();
   if (t.dataset.tab === 'program') loadSequences();
+  if (t.dataset.tab === 'charge') guard(loadCharge());
   if (t.dataset.tab === 'logs') loadLogs();
   if (t.dataset.tab === 'console') loadConsole();
 });
@@ -426,8 +634,10 @@ async function saveScript() {
   if (!j) return; currentScript = j.name; dirty = false; toast('Saved ' + j.name, true); loadScripts();
 }
 async function runScript() {
+  if (locked()) return;
   const name = $('#scrName').value.trim() || 'editor';
-  if (dirty || !currentScript) { /* run editor contents without saving */ }
+  if (!await confirmDialog({ title: `Run script “${name}”?`, okText: '▶ Run',
+    body: 'The script controls the PSU and may switch the output on. Check what is connected.' + (dirty ? '<br><b>The editor has unsaved changes – they will be run as they are.</b>' : '') })) return;
   $('#scrOut').textContent = '';
   await guard(api('/scripts/run', 'POST', { name, code: code.value }));
 }
@@ -459,7 +669,8 @@ function onScriptEvent(d, initial) {
   const running = d.status === 'running';
   $('#scrRun').disabled = running; $('#scrStop').disabled = !running;
   led('ledSCR', running, true);
-  ui.scriptRunning = running; $('#scriptLockName').textContent = d.name || ''; applyLocks();
+  ui.scriptRunning = running; ui.scriptName = d.name || ui.scriptName; ui.scriptStatus = d.status;
+  $('#scriptLockName').textContent = d.name || ''; applyLocks();
   const isSeq = (d.name || '').startsWith('program:');
   const sp = $('#seqStatus'); sp.textContent = isSeq ? d.status : 'idle'; sp.className = 'pill ' + (isSeq ? d.status : '');
   $('#seqRun').disabled = running; $('#seqStop').disabled = !(running && isSeq);
@@ -471,6 +682,12 @@ function onScriptEvent(d, initial) {
       if (m) $$('#seqTable tbody tr').forEach((tr, k) => tr.classList.toggle('cur', k + 1 === +m[1]));
     }
   }
+  const isChg = (d.name || '').startsWith('charge:');
+  const cp = $('#chgStatus'); cp.textContent = isChg ? d.status : 'idle'; cp.className = 'pill ' + (isChg ? d.status : '');
+  $('#chgStart').disabled = running || !chg.last; $('#chgStop').disabled = !(running && isChg);
+  if (isChg && d.line) { appendOut($('#chgOut'), `[${fmtT(d.line.t)}] ${d.line.line}`, d.line.line.startsWith('ERROR') ? 'err' : ''); chg.lines.push(d.line); }
+  if (isChg && initial && d.output) { $('#chgOut').textContent = ''; d.output.forEach(l => appendOut($('#chgOut'), `[${fmtT(l.t)}] ${l.line}`)); chg.lines = d.output.slice(); }
+  if (isChg && ui.lastState) chgLive(ui.lastState);
   if (!running) $$('#seqTable tbody tr').forEach(tr => tr.classList.remove('cur'));
   if (initial && d.output) { $('#scrOut').textContent = ''; d.output.forEach(l => appendOut($('#scrOut'), `[${fmtT(l.t)}] ${l.line}`)); }
 }
@@ -528,7 +745,7 @@ $('#seqDelete').onclick = async () => {
 $('#seqRun').onclick = async () => {
   if (locked()) return;
   const p = seqPayload(); if (!p.steps.length) return toast('The sequence has no steps');
-  if (!confirm(`Start program: steps ${p.start}–${p.end}, cycles ${p.cycles || '∞'}? The output will be switched ON.`)) return;
+  if (!await confirmDialog({ title: `Start program “${p.name}”?`, okText: '▶ Start', body: `Steps ${p.start}–${p.end}, cycles ${p.cycles || '∞'}. <b>The output will be switched ON.</b>` })) return;
   $('#seqOut').textContent = '';
   await guard(api('/sequences/run', 'POST', p));
 };
@@ -611,6 +828,6 @@ $('#rawCmd').onkeydown = e => { if (e.key === 'Enter') sendRaw(); };
     const h = await api('/history');
     chart.data = h.samples.map(x => ({ t: x[0], v: x[1], i: x[2], p: x[3] }));
   } catch (_) { }
-  try { const j = await api('/state'); applyState(j.state); onScriptEvent(j.script, true); onLoggerInfo(j.logger); } catch (_) { }
+  try { const j = await api('/state'); chg.cur = j.charge; applyState(j.state); onScriptEvent(j.script, true); onLoggerInfo(j.logger); } catch (_) { }
   connectStream();
 })();

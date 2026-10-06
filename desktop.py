@@ -89,7 +89,7 @@ def main():
         try:
             import webview  # pywebview
             api = Api(url)
-            api._window = webview.create_window("KORAD KA3005P", url, width=1280, height=860, min_size=(900, 600),
+            api._window = webview.create_window("KORAD KA3005P", url, width=1280, height=800, min_size=(900, 600),
                                                 js_api=api)
             api._window.events.closing += api._on_closing
             try:

@@ -25,6 +25,11 @@ Charging a Li-ion cell with the `10_charge_liion.py` script: CV phase at 4.20 V,
   memories M1–M5 (recall / save) and 6 V/I presets.
 - **Program**: a programmable step test like in the original software. A table of U / I / time steps, start and end
   step, and a number of cycles (0 = infinite).
+- **Charge**: battery charger with a form instead of editing scripts – Li-ion (incl. Panasonic CGR18650CG and Sanyo
+  UR18650A datasheet presets), LiPo, LiHV, LiFePO4, lead-acid (AGM / gel / flooded, with float) and NiMH / NiCd.
+  Pick the type, cell count and capacity; the summary shows the resulting voltage, current, cut-off, limits and an
+  estimated charge time. Starting needs a confirmation. While charging, an animated battery shows the estimated
+  state of charge in % and when the battery will be ready.
 - **Scripts**: Python scripts with a `psu` object. You can save, edit, run and stop them, with output in real time.
   Includes ready-made **battery chargers** for Li-ion, LiFePO4, lead-acid and NiMH.
 - **Logs**: CSV logging of U / I / P with a configurable interval, shown as a chart and a table, and downloadable.
@@ -145,6 +150,8 @@ Scripts can import your own `lib_*.py` libraries from the same folder (they are 
 | `psu.safe_off = False` | do not switch the output off on error / stop (by default it is switched off) |
 
 ### Battery charging
+
+The easiest way is the **Charge** tab. The scripts below do the same from code and are a starting point for your own.
 
 Scripts `10_` to `18_` use the `scripts/lib_batt.py` library (`cccv_charge`, `nimh_charge`, `float_stage`).
 The parameters (cell count, capacity, C-rate, end voltage) are at the top of each script.

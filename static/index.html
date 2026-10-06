@@ -19,6 +19,7 @@
   <nav class="tabs">
     <button class="tab active" data-tab="panel">Panel</button>
     <button class="tab" data-tab="program">Program</button>
+    <button class="tab" data-tab="charge">Charge</button>
     <button class="tab" data-tab="scripts">Scripts</button>
     <button class="tab" data-tab="logs">Logs</button>
     <button class="tab" data-tab="console">Console</button>
@@ -70,8 +71,8 @@
             <option value="30">30 s</option><option value="60" selected>1 min</option>
             <option value="300">5 min</option><option value="900">15 min</option><option value="3600">1 h</option>
           </select>
-          <label class="chk"><input type="checkbox" id="chShowP"> show P</label>
-          <span class="legend"><i style="background:#ff6a3d"></i>U <i style="background:#3ec8ff"></i>I <i style="background:#9cff57"></i>P</span>
+          <input type="checkbox" id="chShowP" hidden>
+          <span class="legend"><i style="background:#ff6a3d"></i>U <i style="background:#3ec8ff"></i>I <span id="legP" class="legtog off" title="Show / hide power"><i style="background:#9cff57"></i>P</span></span>
           <span class="spacer"></span>
           <span class="qlog">
             <input id="qlogName" placeholder="log name" value="measurement">
@@ -210,6 +211,60 @@
   </section>
 </main>
 
+<!-- ============================ CHARGE ============================ -->
+<main id="tab-charge" class="tabpane">
+  <aside class="sidebar chgform">
+    <h3>Battery</h3>
+    <label class="fld">Type <select id="chgChem"></select></label>
+    <label class="fld" data-show="liion">Cell model <select id="chgModel"></select></label>
+    <label class="fld" data-show="lead">Lead-acid type <select id="chgLeadType"></select></label>
+    <label class="fld" data-show="nimh">Chemistry <select id="chgNimhType"></select></label>
+    <label class="fld" data-show="lipo lihv nimh">Mode <select id="chgMode"></select></label>
+    <label class="fld">Cells in series <span class="fldv"><input id="chgCells" type="number" min="1" step="1"><select id="chgCellsSel"></select><small id="chgCellsInfo" class="muted"></small></span></label>
+    <label class="fld">Capacity <span class="fldv"><input id="chgCap" type="number" min="10" step="50"> mAh <small id="chgCapInfo" class="muted"></small></span></label>
+    <h3>Charging</h3>
+    <label class="fld">Charge rate <span class="fldv"><input id="chgC" type="number" min="0.02" step="0.05"> C <small id="chgCA" class="muted"></small></span></label>
+    <label class="fld" data-hide="nimh">End voltage <span class="fldv"><input id="chgVcell" type="number" step="0.01"> V/cell <small id="chgVInfo" class="muted"></small></span></label>
+    <label class="fld" data-show="lead">Float voltage <span class="fldv"><input id="chgVfloat" type="number" step="0.01" min="2.15" max="2.35"> V/cell</span></label>
+    <label class="fld" data-show="lead">Float time <span class="fldv"><input id="chgFloatH" type="number" min="0" step="0.5"> h <small class="muted">0 = no float</small></span></label>
+    <label class="fld" data-hide="nimh">Cut-off current <span class="fldv"><input id="chgCut" type="number" min="0.005" step="0.005"> C <small id="chgCutA" class="muted"></small></span></label>
+    <h3>Safety</h3>
+    <label class="fld">Time limit <span class="fldv"><input id="chgTime" type="number" min="0.1" step="0.5" placeholder="auto"> h</span></label>
+    <label class="fld">Capacity limit <span class="fldv"><input id="chgAh" type="number" min="100" max="200" step="5"> % <small id="chgAhInfo" class="muted"></small></span></label>
+    <label class="fld chk" data-show="lipo lihv" id="chgBalRow"><input id="chgBal" type="checkbox"> a balancer / BMS watches the cells (needed for 2S+)</label>
+    <label class="fld">CSV log <span class="fldv"><input id="chgLog" placeholder="off"></span></label>
+    <p id="chgHint" class="muted chghint"></p>
+  </aside>
+  <section class="editorbox">
+    <div class="toolbar">
+      <h3 class="grow">Summary</h3>
+      <button class="key run" id="chgStart">▶ Start charging</button>
+      <button class="key stop" id="chgStop" disabled>■ Stop</button>
+      <span id="chgStatus" class="pill">idle</span>
+    </div>
+    <div id="chgErr" class="chgerr" hidden></div>
+    <table id="chgSummary" class="chgsum"></table>
+    <ul id="chgWarn" class="chgwarn"></ul>
+    <p class="muted">The PSU does not measure temperature: charge under supervision, check the polarity and the cell count.</p>
+    <div id="chgLive" class="chglive" hidden>
+      <div class="batt" id="chgBatt"><div class="batt-fill" id="chgFill"></div><span class="batt-pct" id="chgPct">–</span></div>
+      <div class="chgstats">
+        <div class="chgeta" id="chgEta">–</div>
+        <div class="muted" id="chgPhase">–</div>
+        <table class="chgsum" id="chgStats"></table>
+        <div class="muted chgnote">Estimate only – the PSU has no fuel gauge; % comes from the start voltage, the charged Ah and the current in the CV phase.</div>
+      </div>
+    </div>
+    <div class="output-head"><h3>Progress</h3><button class="key sm" id="chgClear">Clear</button></div>
+    <pre id="chgOut" class="output"></pre>
+    <details class="help">
+      <summary>Generated script</summary>
+      <pre id="chgCode"></pre>
+      <span class="toolbar"><input id="chgSaveName" placeholder="script name"> <button class="key sm" id="chgSave">Save as script</button></span>
+    </details>
+  </section>
+</main>
+
 <!-- ============================ SCRIPTS ============================ -->
 <main id="tab-scripts" class="tabpane">
   <aside class="sidebar">
@@ -307,6 +362,15 @@ time.sleep(), math.*</pre>
     <pre id="events" class="output tall"></pre>
   </section>
 </main>
+
+<div id="modal" class="modal" hidden>
+  <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="mdTitle">
+    <h3 id="mdTitle"></h3>
+    <div id="mdBody"></div>
+    <label id="mdCheckRow" class="mdcheck"><input type="checkbox" id="mdCheck"> <span id="mdCheckLbl"></span></label>
+    <div class="modal-btns"><button class="key" id="mdCancel">Cancel</button><button class="key run" id="mdOk">OK</button></div>
+  </div>
+</div>
 
 <script src="/static/app.js"></script>
 </body>

@@ -22,7 +22,7 @@ button,input,select,textarea{font:inherit}
 .idn:empty{display:none}
 .conn{display:flex;align-items:center;gap:8px}
 .conn select{background:#1a1b1e;color:var(--text);border:1px solid #000;border-radius:4px;padding:5px 8px}
-#portSel{min-width:200px;max-width:300px}
+#portSel{min-width:160px;max-width:230px}
 .dot{width:12px;height:12px;border-radius:50%;background:#444;display:inline-block;box-shadow:0 0 0 2px #000 inset}
 .dot.on{background:var(--ok);box-shadow:0 0 8px var(--ok)}
 .dot.err{background:var(--danger);box-shadow:0 0 8px var(--danger)}
@@ -30,7 +30,7 @@ button,input,select,textarea{font:inherit}
 .display .scriptlock{margin-left:auto;flex-wrap:nowrap;min-width:0;max-width:260px;padding:2px 3px 2px 8px;font-size:11px}
 .display .scriptlock b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .display .scriptlock .key{flex:0 0 auto;padding:1px 8px;font-size:11px;border-bottom-width:2px}
-.tab{background:transparent;border:1px solid transparent;color:var(--muted);padding:6px 14px;border-radius:6px;cursor:pointer}
+.tab{background:transparent;border:1px solid transparent;color:var(--muted);padding:6px 11px;border-radius:6px;cursor:pointer}
 .tab.active{background:#1a1b1e;color:#fff;border-color:#000}
 .tabpane{display:none;padding:16px;gap:16px;flex:1}
 .tabpane.active{display:flex;flex-direction:column}
@@ -98,13 +98,17 @@ button,input,select,textarea{font:inherit}
 /* ---------- chart ---------- */
 /* trend inside the display (fills the free space under the LEDs) */
 .trend{flex:1;display:flex;flex-direction:column;gap:6px;min-height:180px;border-top:1px solid #1e1e1e;padding-top:8px;margin-top:2px}
-.trend-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11px;color:#8a8a8a}
+.trend-head{display:flex;align-items:center;gap:8px;flex-wrap:nowrap;font-size:11px;color:#8a8a8a;min-width:0}
+.trend-head>*{flex:0 0 auto}
+.trend-head .qlog{flex:0 1 auto;min-width:0}
+.trend-head #qlogInfo{white-space:nowrap}
 .trend-head h3{margin:0;font-size:11px;letter-spacing:.08em;color:#8a8a8a}
 .trend-head select,.trend-head input{background:#141518;color:var(--text);border:1px solid #2a2b30;border-radius:4px;padding:2px 5px;font-size:11px}
 .trend-head .chk{margin-top:0;font-size:11px}
-.trend-head #qlogName{width:96px}
+.trend-head #qlogName{width:96px;min-width:48px;flex:0 1 96px}
 .trend-head .key.sm{padding:2px 8px;font-size:11px;border-bottom-width:2px}
 .trend-head .legend i{margin-left:6px}
+.legtog{cursor:pointer;user-select:none}.legtog.off{opacity:.35}
 .trend-plot{flex:1;position:relative;min-height:140px}
 .trend-plot canvas{position:absolute;inset:0;width:100%;height:100%;background:transparent}
 /* ?view=trend - the trend alone in its own window */
@@ -173,3 +177,55 @@ th{position:sticky;top:0;background:#1a1b1e;color:var(--muted)}
 .seqtable input{width:90px;background:#1a1b1e;color:var(--text);border:1px solid #000;border-radius:4px;padding:3px 6px;text-align:right;font-family:ui-monospace,monospace}
 .seqtable tr.cur td{background:#2a1f12}
 .seqtable .del{background:none;border:0;color:var(--danger);cursor:pointer;font-size:14px}
+
+/* ---------- charge tab ---------- */
+#tab-charge.active{flex-direction:row;align-items:stretch}
+.chgform{width:380px;flex:0 0 380px;gap:6px}
+.chgform h3{margin:8px 0 2px}
+.chgform h3:first-child{margin-top:0}
+.fld{display:grid;grid-template-columns:120px 1fr;align-items:center;gap:8px;font-size:13px;color:var(--text)}
+.fld.chk{display:flex;grid-template-columns:none;font-size:12px;color:var(--muted);margin-top:4px}
+.fldv{display:flex;align-items:center;gap:6px;flex-wrap:wrap;color:var(--muted)}
+.fld select,.fld input:not([type=checkbox]){background:#1a1b1e;color:var(--text);border:1px solid #000;border-radius:4px;padding:5px 7px;font:inherit;font-size:13px}
+.fld select{width:100%}
+.fldv input:not([type=checkbox]){width:80px}
+.fld input:disabled{opacity:.5}
+.fldv small{font-size:11px}
+.chghint{margin:6px 0 0;line-height:1.45}
+.grow{flex:1;margin:0}
+.chgsum{border-collapse:collapse;font-size:13px;max-width:640px}
+.chgsum td{text-align:left;padding:4px 14px 4px 0;border-bottom:1px solid #3a3c41;vertical-align:top}
+.chgsum td:first-child{color:var(--muted);white-space:nowrap}
+.chgsum td:last-child{font-family:ui-monospace,monospace}
+.chgwarn{margin:0;padding-left:18px;color:var(--amber);font-size:12px}
+.chgwarn:empty{display:none}
+.chgerr{background:#3a1616;border:1px solid var(--danger);color:#ffd0d0;border-radius:6px;padding:8px 10px;font-size:13px}
+#chgCode{max-height:260px}
+@media (max-width:1000px){ #tab-charge.active{flex-direction:column} .chgform{width:auto;flex:0 0 auto} }
+
+/* ---------- confirmation dialog ---------- */
+.modal{position:fixed;inset:0;background:#000a;display:flex;align-items:center;justify-content:center;z-index:50;padding:16px}
+.modal-box{background:var(--panel);border:1px solid var(--panel-edge);border-radius:12px;padding:18px 20px;max-width:560px;width:100%;box-shadow:0 20px 60px #000c;max-height:90vh;overflow:auto}
+.modal-box h3{color:var(--text);font-size:15px;text-transform:none;letter-spacing:0;margin-bottom:12px}
+#mdBody{font-size:13px;line-height:1.5}
+#mdBody .chgsum{width:100%;margin:4px 0 8px}
+.mdcheck{display:flex;gap:8px;align-items:flex-start;margin-top:12px;font-size:13px;color:var(--text)}
+.mdcheck[hidden]{display:none}
+.modal-btns{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+.key:disabled{opacity:.45;cursor:not-allowed}
+.fld.chk.need{color:var(--amber)}
+
+/* ---------- charge: live battery ---------- */
+.chglive{display:flex;gap:28px;align-items:center;background:#202125;border:1px solid #000;border-radius:10px;padding:16px 20px}
+.batt{position:relative;flex:0 0 auto;width:190px;height:86px;border:5px solid #cfd3dc;border-radius:14px;padding:5px;box-sizing:border-box}
+.batt::after{content:"";position:absolute;right:-15px;top:22px;width:9px;height:32px;background:#cfd3dc;border-radius:0 5px 5px 0}
+.batt-fill{height:100%;width:0;border-radius:7px;background-color:var(--ok);transition:width 1.2s ease,background-color .6s}
+.batt[data-lvl=low] .batt-fill{background-color:var(--danger)}
+.batt[data-lvl=mid] .batt-fill{background-color:var(--amber)}
+.batt.charging .batt-fill{background-image:linear-gradient(135deg,#fff3 25%,transparent 25%,transparent 50%,#fff3 50%,#fff3 75%,transparent 75%);background-size:28px 28px;animation:battflow 1s linear infinite}
+@keyframes battflow{to{background-position:28px 0}}
+@media (prefers-reduced-motion:reduce){.batt.charging .batt-fill{animation:none}}
+.batt-pct{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:700 26px/1 ui-monospace,monospace;color:#fff;text-shadow:0 1px 3px #000}
+.chgstats{display:flex;flex-direction:column;gap:4px;min-width:0}
+.chgeta{font-size:20px;font-weight:700;color:var(--text)}
+.chgnote{font-size:11px;max-width:520px}
