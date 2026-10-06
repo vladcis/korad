@@ -24,6 +24,7 @@ cp packaging/linux/korad.svg "$ROOT/usr/share/icons/hicolor/scalable/apps/"
 # uaccess (before 73-seat-late) = the logged-in user gets access to the PSU even without the dialout group
 sed 's/SYMLINK+="korad"/SYMLINK+="korad", TAG+="uaccess"/' 99-korad.rules > "$ROOT/usr/lib/udev/rules.d/70-korad.rules"
 cp README.md "$ROOT/usr/share/doc/korad/"
+cp LICENSE "$ROOT/usr/share/doc/korad/copyright"
 
 cat > "$ROOT/usr/bin/korad" <<'SH'
 #!/bin/sh

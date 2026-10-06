@@ -186,3 +186,7 @@ scripts/      example scripts + lib_batt.py      data/  presets and sequences   
 
 *Keywords: KORAD KA3005PS software, KORAD KA3005P software, KA3005P Python, KA3005PS USB driver Linux, Tenma 72-2535 software,
 programmable DC power supply remote control, lab bench power supply GUI, battery charger with lab power supply.*
+
+## License
+
+[MIT](LICENSE) © 2026 vladcis
