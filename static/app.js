@@ -72,19 +72,42 @@ function setTog(id, on, label) {
   const b = $('#' + id); b.classList.toggle('on', !!on);
   const st = b.querySelector('.st'); if (st) st.textContent = label || (on ? 'ON' : 'OFF');
 }
+// A value just set from the panel wins over the polled one for a moment: the server reads
+// VSET/ISET back only every few polls, so without this the old value flashes back in.
+const PENDING_MS = 2000;
+const pending = { v: null, i: null };
+function setPending(k, val) { pending[k] = { val, until: Date.now() + PENDING_MS }; }
+function shownSet(k, server) {
+  const p = pending[k];
+  if (!p) return server;
+  if (Date.now() > p.until) { pending[k] = null; return server; }
+  return p.val;
+}
+
+function setTitle(t) {
+  if (document.body.classList.contains('trend-view')) t = 'Trend · ' + t;
+  if (ui.title === t) return;
+  ui.title = t; document.title = t;
+  const api = window.pywebview && window.pywebview.api;
+  if (api && api.set_title) api.set_title(t);       // native window title (desktop app)
+}
+window.addEventListener('pywebviewready', () => { const t = ui.title; ui.title = null; if (t) setTitle(t.replace(/^Trend · /, '')); });
 function led(id, on, green) { const e = $('#' + id); e.classList.toggle('on', !!on); e.classList.toggle('green', !!green); }
 
 function applyState(s) {
   ui.lastState = s;
   const conn = s.connected;
   $('#connDot').className = 'dot ' + (conn ? (s.error ? 'err' : 'on') : 'off');
-  $('#idn').textContent = conn ? `${s.idn} · ${s.port}` : (s.error || 'not connected');
+  // device name, SN and port go to the window title; the header only shows a problem
+  setTitle(conn ? `${s.idn} · ${s.port}` : 'KORAD – ' + (s.error || 'not connected'));
+  $('#idn').textContent = conn ? '' : (s.error || 'not connected');
   $('#btnConnect').hidden = conn; $('#btnDisconnect').hidden = !conn;
   $('#dispErr').textContent = s.error || '';
 
   if (!conn) { setSeg('segV', '----', 4); setSeg('segI', '----', 4); setSeg('segP', '-OFF', 4); return; }
   // like the real display: set values while the output is off, measured values while on
-  const dv = s.output ? s.vout : s.vset, di = s.output ? s.iout : s.iset;
+  const vset = shownSet('v', s.vset), iset = shownSet('i', s.iset);
+  const dv = s.output ? s.vout : vset, di = s.output ? s.iout : iset;
   setSeg('segV', dv.toFixed(2).padStart(5, '0'), 4);
   if (ui.mA && di < 1) setSeg('segI', (di * 1000).toFixed(0), 4); else setSeg('segI', di.toFixed(3), 4);
   $('#unitMA').classList.toggle('on', ui.mA && di < 1);
@@ -98,8 +121,8 @@ function applyState(s) {
     if (!ui.editingOCP && s.ocp_limit != null) $('#inOCP').value = s.ocp_limit.toFixed(3);
     if (!ui.editingOVP && s.ovp_limit != null) $('#inOVP').value = s.ovp_limit.toFixed(2);
   } else { $('#limitsNote').hidden = false; $('#inOCP').disabled = $('#inOVP').disabled = true; }
-  if (!ui.editingV) { $('#inV').value = s.vset.toFixed(2); $('#slV').value = s.vset; }
-  if (!ui.editingI) { $('#inI').value = s.iset.toFixed(3); $('#slI').value = s.iset; }
+  if (!ui.editingV && !ui.dragV) { $('#inV').value = vset.toFixed(2); $('#slV').value = vset; }
+  if (!ui.editingI && !ui.dragI) { $('#inI').value = iset.toFixed(3); $('#slI').value = iset; }
   const lastT = chart.data.length ? chart.data[chart.data.length - 1].t : 0;
   if (s.t > lastT) chart.data.push({ t: s.t, v: s.vout, i: s.iout, p: s.power });
   const cut = s.t - 3700;
@@ -149,6 +172,11 @@ $('#chartWin').onchange = e => chart.win = +e.target.value;
 $('#chShowP').onchange = e => chart.showP = e.target.checked;
 $('#chartClear').onclick = () => chart.data = [];
 window.addEventListener('resize', () => ui.lastState && applyState(ui.lastState));
+// desktop app: closing the window while a script runs (called from desktop.py)
+function askQuit() {
+  const name = $('#scriptLockName').textContent || 'A script';
+  if (confirm(`${name} is still running.\n\nStop it (the output is switched off) and quit?`)) window.pywebview.api.quit();
+}
 // trend in its own window: native pywebview window in the desktop app, popup in the browser
 $('#trendPop').onclick = () => {
   if (window.pywebview && window.pywebview.api && window.pywebview.api.open_trend) window.pywebview.api.open_trend();
@@ -156,7 +184,7 @@ $('#trendPop').onclick = () => {
 };
 if (new URLSearchParams(location.search).get('view') === 'trend') {
   document.body.classList.add('trend-view');
-  document.title = 'KORAD – trend';
+  document.title = 'Trend · KORAD';
 }
 
 // ---------------------------------------------------------------- SSE
@@ -167,7 +195,7 @@ function connectStream() {
   es.addEventListener('logger', e => onLoggerInfo(JSON.parse(e.data)));
   es.addEventListener('event', e => addEvent(JSON.parse(e.data)));
   es.addEventListener('cmd', e => addCmd(JSON.parse(e.data)));
-  es.onerror = () => { $('#connDot').className = 'dot err'; $('#idn').textContent = 'server unreachable…'; };
+  es.onerror = () => { $('#connDot').className = 'dot err'; $('#idn').textContent = 'server unreachable…'; setTitle('KORAD – server unreachable'); };
 }
 
 // ---------------------------------------------------------------- connection
@@ -201,17 +229,43 @@ function applyLocks() {
 }
 $('#btnStopScript').onclick = () => guard(api('/scripts/stop', 'POST'));
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
-async function setV(v) { if (locked()) return; v = clamp(+v, 0, 30); $('#inV').value = v.toFixed(2); $('#slV').value = v; await guard(api('/set', 'POST', { v })); }
-async function setI(i) { if (locked()) return; i = clamp(+i, 0, 5); $('#inI').value = i.toFixed(3); $('#slI').value = i; await guard(api('/set', 'POST', { i })); }
+async function setV(v) {
+  if (locked()) return;
+  v = Math.round(clamp(+v, 0, 30) * 100) / 100;
+  if (!ui.dragV) { $('#inV').value = v.toFixed(2); $('#slV').value = v; setPending('v', v); }
+  if (ui.lastState) applyState(ui.lastState);
+  await guard(api('/set', 'POST', { v }));
+}
+async function setI(i) {
+  if (locked()) return;
+  i = Math.round(clamp(+i, 0, 5) * 1000) / 1000;
+  if (!ui.dragI) { $('#inI').value = i.toFixed(3); $('#slI').value = i; setPending('i', i); }
+  if (ui.lastState) applyState(ui.lastState);
+  await guard(api('/set', 'POST', { i }));
+}
 
 $('#inV').onfocus = () => ui.editingV = true; $('#inI').onfocus = () => ui.editingI = true;
 $('#inV').onblur = () => ui.editingV = false; $('#inI').onblur = () => ui.editingI = false;
 $('#inV').onchange = e => setV(e.target.value); $('#inI').onchange = e => setI(e.target.value);
 $('#inV').onkeydown = e => { if (e.key === 'Enter') e.target.blur(); };
 $('#inI').onkeydown = e => { if (e.key === 'Enter') e.target.blur(); };
-let slT;
-$('#slV').oninput = e => { ui.editingV = true; $('#inV').value = (+e.target.value).toFixed(2); clearTimeout(slT); slT = setTimeout(() => { setV(e.target.value); ui.editingV = false; }, 150); };
-$('#slI').oninput = e => { ui.editingI = true; $('#inI').value = (+e.target.value).toFixed(3); clearTimeout(slT); slT = setTimeout(() => { setI(e.target.value); ui.editingI = false; }, 150); };
+// slider: while it is held nothing overwrites it; the value goes to the PSU at most every 200 ms
+// during the drag and once more, exactly, on release
+function bindSlider(sl, inp, k, digits, send) {
+  const drag = 'drag' + k.toUpperCase();
+  let timer = null;
+  const end = () => { ui[drag] = false; };
+  sl.addEventListener('pointerdown', () => { ui[drag] = true; });
+  sl.addEventListener('pointerup', end); sl.addEventListener('pointercancel', end);
+  sl.oninput = () => {
+    if (ui.scriptRunning || ui.lock) return;
+    inp.value = (+sl.value).toFixed(digits); setPending(k, +sl.value);
+    if (!timer) timer = setTimeout(() => { timer = null; send(+sl.value); }, 200);
+  };
+  sl.onchange = () => { clearTimeout(timer); timer = null; end(); send(+sl.value); };
+}
+bindSlider($('#slV'), $('#inV'), 'v', 2, setV);
+bindSlider($('#slI'), $('#inI'), 'i', 3, setI);
 $$('[data-dv]').forEach(b => b.onclick = () => setV(+$('#inV').value + +b.dataset.dv));
 $$('[data-di]').forEach(b => b.onclick = () => setI(+$('#inI').value + +b.dataset.di));
 $$('[data-pv]').forEach(b => b.onclick = () => setV(+b.dataset.pv));

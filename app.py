@@ -275,10 +275,10 @@ def api_set():
     j = request.json or {}
     out = {}
     if "v" in j and j["v"] is not None:
-        out["vset"] = ctl.dev.set_v(j["v"])
+        out["vset"] = ctl.state["vset"] = ctl.dev.set_v(j["v"])
         ctl.events.add(f"VSET {out['vset']:.2f} V")
     if "i" in j and j["i"] is not None:
-        out["iset"] = ctl.dev.set_i(j["i"])
+        out["iset"] = ctl.state["iset"] = ctl.dev.set_i(j["i"])
         ctl.events.add(f"ISET {out['iset']:.3f} A")
     ctl.refresh_set()
     return ok(**out)
@@ -586,6 +586,20 @@ def api_stream():
 
 
 # ---------------------------------------------------------------- main
+def shutdown(timeout=6.0):
+    """Before the app exits: stops a running script the same way as the Stop button
+    (output off when psu.safe_off) and closes the CSV log."""
+    if ctl is None:
+        return
+    r = ctl.scripts
+    if r.running:
+        print(f"Stopping script '{r.name}' before exit…")
+        r.stop()
+        r.thread.join(timeout)
+    if ctl.logger.active:
+        ctl.logger.stop()
+
+
 def create(device=None, autoconnect=True, baud=9600):
     global ctl
     os.makedirs(SCRIPTS_DIR, exist_ok=True)

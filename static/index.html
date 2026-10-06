@@ -8,7 +8,7 @@
 </head>
 <body>
 <header class="top">
-  <div class="brand"><span class="logo">KORAD</span> <span id="idn" class="idn">–</span></div>
+  <div class="brand"><span class="logo">KORAD</span> <span id="idn" class="idn"></span></div>
   <div class="conn">
     <span id="connDot" class="dot off"></span>
     <select id="portSel" title="Serial port"></select>
@@ -61,6 +61,7 @@
         <span class="led-lbl"><i id="ledLOG" class="led"></i>LOG</span>
         <span class="led-lbl"><i id="ledSCR" class="led"></i>SCRIPT</span>
         <span id="dispErr" class="disp-err"></span>
+        <div id="scriptLock" class="scriptlock" title="Script running – panel locked" hidden>⏳ <b id="scriptLockName"></b> <button class="key sm stop" id="btnStopScript">■ Stop</button></div>
       </div>
       <div class="trend">
         <div class="trend-head">
@@ -124,7 +125,6 @@
           <button class="key tog" id="btnMA">A/mA <span class="st">A</span></button>
         </div>
         <button class="key onoff" id="btnOUT">OUTPUT: OFF</button>
-        <div id="scriptLock" class="scriptlock" hidden>⏳ Script <b id="scriptLockName"></b> is running – panel locked. <button class="key sm stop" id="btnStopScript">■ Stop</button></div>
       </div>
 
       <div class="group adjust">

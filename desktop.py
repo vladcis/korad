@@ -35,6 +35,26 @@ class Api:
 
     def __init__(self, url):
         self._url = url
+        self._window = None
+        self._closing_ok = False
+
+    def _on_closing(self):
+        """Window close: with a script running ask first (in the page), never kill it silently."""
+        r = korad_app.ctl.scripts
+        if self._closing_ok or not r.running:
+            return True
+        threading.Thread(target=self._window.evaluate_js, args=("askQuit()",), daemon=True).start()
+        return False
+
+    def quit(self):
+        """Called by the page after the user confirmed quitting while a script runs."""
+        korad_app.shutdown()
+        self._closing_ok = True
+        self._window.destroy()
+
+    def set_title(self, title):
+        if self._window:
+            self._window.set_title(title)
 
     def open_trend(self):
         import webview
@@ -68,9 +88,14 @@ def main():
     if not a.browser:
         try:
             import webview  # pywebview
-            webview.create_window("KORAD KA3005P", url, width=1280, height=860, min_size=(900, 600),
-                                  js_api=Api(url))
-            webview.start()
+            api = Api(url)
+            api._window = webview.create_window("KORAD KA3005P", url, width=1280, height=860, min_size=(900, 600),
+                                                js_api=api)
+            api._window.events.closing += api._on_closing
+            try:
+                webview.start()
+            finally:
+                korad_app.shutdown()
             return
         except ImportError:
             print("pywebview is not installed (pip install pywebview) - opening the browser.", file=sys.stderr)
