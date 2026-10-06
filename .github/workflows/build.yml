@@ -73,14 +73,12 @@ jobs:
       - name: Smoke test (install, server, native window)
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq ./dist/korad_*_all.deb xvfb
+          sudo apt-get install -y -qq ./dist/korad_*_all.deb xvfb libgl1-mesa-dri
           KORAD_HOME=/tmp/kd korad --server --port 8592 --no-autoconnect >/tmp/s.log 2>&1 &
-          sleep 4
-          curl -sf http://127.0.0.1:8592/api/scripts | grep -q lib_batt
-          KORAD_HOME=/tmp/kd xvfb-run -a timeout 25 korad --no-autoconnect >/tmp/g.log 2>&1 || true
-          cat /tmp/g.log
-          ! grep -q "opening the browser" /tmp/g.log
-          grep -q '"GET / HTTP' /tmp/g.log
+          sleep 6
+          curl -sf http://127.0.0.1:8592/api/scripts | grep -q lib_batt || { cat /tmp/s.log; echo "::error title=deb server::$(tail -20 /tmp/s.log | awk '{printf "%s%%0A", $0}')"; exit 1; }
+          KORAD_HOME=/tmp/kd xvfb-run -a timeout 30 korad --no-autoconnect >/tmp/g.log 2>&1 || true
+          sh packaging/linux/check_window.sh /tmp/g.log deb
       - uses: actions/upload-artifact@v4
         with:
           name: deb
@@ -106,9 +104,7 @@ jobs:
         run: |
           KORAD_HOME=/tmp/ka APPIMAGE_EXTRACT_AND_RUN=1 xvfb-run -a timeout 40 \
             dist/korad-linux-x86_64.AppImage --no-autoconnect >/tmp/g.log 2>&1 || true
-          cat /tmp/g.log
-          ! grep -q "opening the browser" /tmp/g.log
-          grep -q '"GET / HTTP' /tmp/g.log
+          sh packaging/linux/check_window.sh /tmp/g.log AppImage
       - uses: actions/upload-artifact@v4
         with:
           name: appimage
