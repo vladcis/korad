@@ -127,7 +127,7 @@ function applyState(s) {
   if (s.t > lastT) chart.data.push({ t: s.t, v: s.vout, i: s.iout, p: s.power });
   const cut = s.t - 3700;
   while (chart.data.length && chart.data[0].t < cut) chart.data.shift();
-  drawChart($('#chart'), chart.data.filter(d => d.t >= s.t - chart.win), { showP: chart.showP, keyT: 't' });
+  drawTrend();
 }
 
 // ---------------------------------------------------------------- chart
@@ -142,7 +142,8 @@ function drawChart(cv, data, opt) {
   const L = 46, R = opt.showP ? 92 : 46, T = 10, B = 24, pw = W - L - R, ph = H - T - B;
   g.font = '11px system-ui'; g.fillStyle = '#777'; g.strokeStyle = '#26282d';
   if (data.length < 2) { g.fillText('waiting for data…', L + 10, T + 20); return; }
-  const t0 = data[0].t, t1 = data[data.length - 1].t, span = Math.max(1, t1 - t0);
+  const t0 = opt.t0 ?? data[0].t, t1 = opt.t1 ?? data[data.length - 1].t, span = Math.max(1e-3, t1 - t0);
+  cv._x = { L, pw, t0, t1 };            // for mouse zoom / pan
   const mx = (k, pad) => { let m = 0; for (const d of data) if (d[k] > m) m = d[k]; return m <= 0 ? pad : m * 1.1; };
   const vmax = mx('v', 1), imax = mx('i', 0.1), pmax = mx('p', 1);
   const X = t => L + (t - t0) / span * pw;
@@ -165,12 +166,51 @@ function drawChart(cv, data, opt) {
     data.forEach((d, i) => { const x = X(d.t), y = Y(d[k], max); i ? g.lineTo(x, y) : g.moveTo(x, y); });
     g.stroke();
   };
+  g.save(); g.beginPath(); g.rect(L, T - 2, pw, ph + 4); g.clip();
   if (opt.showP) line('p', pmax, '#9cff57');
   line('i', imax, '#3ec8ff'); line('v', vmax, '#ff6a3d');
+  g.restore();
+  if (opt.note) { g.fillStyle = '#e0b64a'; g.textAlign = 'left'; g.fillText(opt.note, L + 8, T + 14); }
 }
-$('#chartWin').onchange = e => chart.win = +e.target.value;
-$('#chShowP').onchange = e => chart.showP = e.target.checked;
-$('#chartClear').onclick = () => chart.data = [];
+// trend view: chart.span seconds wide, ending at chart.end (null = follow the live data)
+chart.span = chart.win; chart.end = null;
+function drawTrend() {
+  const d = chart.data;
+  if (!d.length) return drawChart($('#chart'), d, { showP: chart.showP });
+  const last = d[d.length - 1].t;
+  if (chart.end !== null && chart.end >= last) chart.end = null;
+  const t1 = chart.end ?? last, t0 = t1 - chart.span;
+  let a = 0, b = d.length;                // visible samples + one on each side, so lines reach the edges
+  while (a < b && d[a].t < t0) a++;
+  while (b > a && d[b - 1].t > t1) b--;
+  const vis = d.slice(Math.max(0, a - 1), Math.min(d.length, b + 1));
+  drawChart($('#chart'), vis, { showP: chart.showP, t0, t1,
+    note: chart.end !== null ? '⏸ paused – scroll right or double-click for live' : '' });
+}
+function trendView(span, end) {
+  const d = chart.data; if (!d.length) return;
+  const first = d[0].t, last = d[d.length - 1].t;
+  chart.span = Math.min(Math.max(span, 5), Math.max(chart.win, last - first, 5));
+  chart.end = end === null || end >= last ? null : Math.max(end, first + chart.span);
+  drawTrend();
+}
+// wheel = zoom around the cursor, horizontal wheel / Shift+wheel = pan, double-click = reset
+$('#chart').addEventListener('wheel', e => {
+  const cv = e.currentTarget, x = cv._x; if (!x || !chart.data.length) return;
+  e.preventDefault();
+  const k = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;   // lines / pages -> px
+  const dx = (e.shiftKey ? e.deltaY : e.deltaX) * k, dy = e.shiftKey ? 0 : e.deltaY * k;
+  const span = x.t1 - x.t0;
+  if (Math.abs(dx) > Math.abs(dy)) return trendView(span, x.t1 + dx / x.pw * span);
+  // live view zooms around "now" (stays live), a paused view around the cursor
+  const frac = chart.end === null ? 1 : Math.min(1, Math.max(0, (e.offsetX - x.L) / x.pw));
+  const tc = x.t0 + frac * span, ns = span * Math.exp(dy * 0.0015);
+  trendView(ns, tc + (1 - frac) * ns);
+}, { passive: false });
+$('#chart').ondblclick = () => { chart.span = chart.win; chart.end = null; drawTrend(); };
+$('#chartWin').onchange = e => { chart.win = +e.target.value; chart.span = chart.win; chart.end = null; drawTrend(); };
+$('#chShowP').onchange = e => { chart.showP = e.target.checked; drawTrend(); };
+$('#chartClear').onclick = () => { chart.data = []; chart.span = chart.win; chart.end = null; drawTrend(); };
 window.addEventListener('resize', () => ui.lastState && applyState(ui.lastState));
 // desktop app: closing the window while a script runs (called from desktop.py)
 function askQuit() {
