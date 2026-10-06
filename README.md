@@ -19,7 +19,8 @@ Charging a Li-ion cell with the `10_charge_liion.py` script: CV phase at 4.20 V,
 
 - **Front panel** like the real KA3005PS: 7-segment V / A / W display and CV, CC, OCP, OVP, ON and LOCK indicators.
   While the output is off it shows the set values; while it is on it shows the measured values.
-- **Live trend** of U / I / P built into the display. One click opens it in a separate window (a second monitor works well).
+- **Live trend** of U / I / P built into the display: mouse wheel zooms, horizontal scroll (or Shift+wheel) pans through the
+  history, double-click returns to live. One click opens it in a separate window (a second monitor works well).
 - Set voltage and current by typing, with a slider or with step buttons. Output ON/OFF, OCP, OVP, BEEP, A/mA,
   memories M1–M5 (recall / save) and 6 V/I presets.
 - **Program**: a programmable step test like in the original software. A table of U / I / time steps, start and end
@@ -145,7 +146,7 @@ Scripts can import your own `lib_*.py` libraries from the same folder (they are 
 
 ### Battery charging
 
-Scripts `10_` to `17_` use the `scripts/lib_batt.py` library (`cccv_charge`, `nimh_charge`, `float_stage`).
+Scripts `10_` to `18_` use the `scripts/lib_batt.py` library (`cccv_charge`, `nimh_charge`, `float_stage`).
 The parameters (cell count, capacity, C-rate, end voltage) are at the top of each script.
 
 | script | chemistry | method |
@@ -158,6 +159,7 @@ The parameters (cell count, capacity, C-rate, end voltage) are at the top of eac
 | `15_battery_check.py` | – | only measures the battery voltage |
 | `16_charge_panasonic_cgr18650cg.py` | Panasonic CGR18650CG (18650) | datasheet values: 1.5 A (0.7 It), 4.20 V, ends at 110 mA |
 | `17_charge_sanyo_ur18650a.py` | Sanyo UR18650A (18650) | datasheet values: 1.51 A, 4.20 V, precharge below 3.0 V |
+| `18_charge_lipo.py` | LiPo / LiHV RC packs 1S–7S | 1 C → 4.20 V (LiHV 4.35 V) or storage 3.80 V/cell, ends at C/10; 2S+ only with a balancer |
 
 Before it starts, the library checks that a battery is connected and that its voltage is in a sane range. It counts
 the charged Ah, reports the CC → CV transition, and switches the output off on a time limit, capacity overrun, error or the Stop button.

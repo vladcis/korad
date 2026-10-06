@@ -1,4 +1,4 @@
-# Li-ion / LiPo charging (CC/CV)  –  18650, LiPo packs 1S–7S
+# Li-ion / LiPo charging (CC/CV)  –  18650, LiPo packs 1S–7S (RC LiPo with storage mode: 18_charge_lipo.py)
 # !!! Check the cell count and polarity. Charge under supervision on a non-flammable surface. !!!
 from lib_batt import cccv_charge
 
