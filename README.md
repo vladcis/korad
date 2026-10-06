@@ -43,7 +43,7 @@ Ready-made builds are in **[Releases](https://github.com/vladcis/korad/releases/
 | **Windows 10/11** (64-bit) | `korad-windows-x64.exe` | Double-click. On first start SmartScreen shows *More info → Run anyway* (the app is not signed). |
 | **macOS** (Apple Silicon M1–M4) | `korad-macos-arm64.zip` | Unzip and move `korad.app` to Applications. The first time, **right-click → Open** (Gatekeeper), or run `xattr -d com.apple.quarantine /Applications/korad.app` in Terminal. Intel Mac: run from source (section 2). |
 | **Debian 12+, Ubuntu 22.04+, Raspberry Pi OS** (any CPU) | `korad_<version>_all.deb` | `sudo apt install ./korad_*_all.deb`, then start **KORAD KA3005P** from the app menu or run `korad`. Uses the system WebKitGTK (small download), and installs a udev rule: the logged-in desktop user gets access to the supply without the `dialout` group, and ModemManager leaves it alone. |
-| **Linux, any distro** (x86-64, glibc ≥ 2.35) | `korad-linux-x86_64.AppImage` | `chmod +x korad-linux-x86_64.AppImage && ./korad-linux-x86_64.AppImage`. Self-contained (Qt WebEngine bundled, ~185 MB). |
+| **Linux, any distro** (x86-64, glibc ≥ 2.35) | `korad-linux-x86_64.AppImage` | `chmod +x korad-linux-x86_64.AppImage && ./korad-linux-x86_64.AppImage`. Self-contained (Qt WebEngine bundled, ~210 MB). |
 
 ### Web app (UI in your browser)
 
