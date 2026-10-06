@@ -63,6 +63,8 @@ After start the app finds the power supply on USB by itself. If it does not, pic
 | Linux | `~/.local/share/korad/` |
 
 Set another folder with the `KORAD_HOME` environment variable.
+Example scripts you have not edited are updated (or removed, if renamed) automatically with each new version;
+edited examples and your own scripts are never touched.
 
 ### What each system needs
 

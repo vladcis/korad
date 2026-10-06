@@ -10,13 +10,13 @@ import json
 import os
 import queue
 import re
-import shutil
 import sys
 import threading
 import time
 
 from flask import Flask, Response, jsonify, request, send_file, send_from_directory
 
+import examples
 from datalog import DataLogger, EventLog, safe_name
 from korad import Korad, KoradError
 from scripting import ScriptRunner
@@ -586,23 +586,15 @@ def api_stream():
 
 
 # ---------------------------------------------------------------- main
-def _seed_scripts():
-    """On first run of the packaged app, copies the example scripts into the user folder."""
-    src = os.path.join(BUNDLE, "scripts")
-    if not os.path.isdir(src) or os.path.abspath(src) == os.path.abspath(SCRIPTS_DIR):
-        return
-    for fn in os.listdir(src):
-        dst = os.path.join(SCRIPTS_DIR, fn)
-        if fn.endswith(".py") and not os.path.exists(dst):
-            shutil.copyfile(os.path.join(src, fn), dst)
-
-
 def create(device=None, autoconnect=True, baud=9600):
     global ctl
     os.makedirs(SCRIPTS_DIR, exist_ok=True)
     os.makedirs(LOGS_DIR, exist_ok=True)
     os.makedirs(SEQ_DIR, exist_ok=True)
-    _seed_scripts()
+    changed = examples.sync(os.path.join(BUNDLE, "scripts"), SCRIPTS_DIR)
+    for action, files in changed.items():
+        if files:
+            print(f"Example scripts {action}:", ", ".join(sorted(files)))
     print("Data (scripts, logs):", HOME)
     ctl = Controller(device)
     ctl.dev.baud = baud

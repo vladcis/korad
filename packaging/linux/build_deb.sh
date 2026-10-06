@@ -13,7 +13,7 @@ rm -rf build/deb
 mkdir -p "$LIB/static" "$LIB/scripts" "$ROOT/DEBIAN" "$ROOT/usr/bin" "$ROOT/usr/share/applications" \
          "$ROOT/usr/share/icons/hicolor/scalable/apps" "$ROOT/usr/lib/udev/rules.d" "$ROOT/usr/share/doc/korad" dist
 
-cp app.py korad.py scripting.py sequencer.py datalog.py desktop.py "$LIB/"
+cp app.py korad.py scripting.py sequencer.py datalog.py desktop.py examples.py "$LIB/"
 cp static/* "$LIB/static/"
 cp scripts/*.py "$LIB/scripts/"
 # pure-Python deps (Ubuntu 22.04 / Debian 12 ship no Flask 3); markupsafe and pyserial come from the system
