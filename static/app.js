@@ -373,11 +373,17 @@ function chgLive(s) {
   const recovering = L.some(l => l.startsWith('=== Recovery')) && !L.some(l => /RECOVERED|Battery OK|Battery is full/.test(l));
   const recond = L.some(l => l.startsWith('=== Reconditioning')) && !inFloat;
   const pre = L.some(l => l.startsWith('Precharging')) && !L.some(l => /precharged/.test(l));
-  const inCV = c.method === 'cccv' && s.output && s.mode === 'CV' && !inFloat;
+  // nothing measured yet (start-up probe / recovery test): no % at all, the battery shows a 'checking' sweep
+  const checking = running && !vStart && !recovering && !inFloat && !recond;
+  const cvLine = L.some(l => / CC → CV /.test(l));   // a real CC→CV transition reported by the script
+  const inCV = c.method === 'cccv' && s.output && s.mode === 'CV' && !inFloat && !checking && cvLine;
   let soc = soc0 + ah * c.soc.eff / c.cap_ah * 100, eta = null, phase, phaseNote = '';
   if (c.method === 'cccv' && !inCV && !inFloat) soc = Math.min(soc, c.storage ? target - 1 : cvAt - 1);
   let rec = null;   // recovery progress: rest voltage history and how much current the battery takes vs. needed
-  if (recovering) {
+  if (checking) {
+    soc = 0; eta = null;
+    phase = 'Checking the battery – rest voltage and a short charging test';
+  } else if (recovering) {
     const ahR = L.filter(l => / recovery /.test(l)).map(l => l.match(/([\d.]+) Ah/)).filter(Boolean).pop();
     if (ahR) ah = +ahR[1];
     const rests = [vStart, ...L.map(l => l.match(/ rest ([\d.]+) V/)).filter(Boolean).map(m => m[1])].filter(Boolean).map(Number);
@@ -423,7 +429,7 @@ function chgLive(s) {
     phase = pre ? 'Pre-charge – low current until the voltage recovers' : 'CC – constant current';
   }
   soc = Math.min(100, Math.max(0, soc));
-  if (running) chg.maxSoc = soc = Math.max(soc, chg.maxSoc);       // never goes backwards
+  if (running && !checking) chg.maxSoc = soc = Math.max(soc, chg.maxSoc);       // never goes backwards
   const fin = !running, ok = ui.scriptStatus === 'done';
   if (fin && ok) soc = target;
   const left = c.timeout_h - el;
@@ -431,12 +437,13 @@ function chgLive(s) {
   const b = $('#chgBatt');
   b.classList.toggle('charging', running && s.output);
   b.classList.toggle('recovering', !!rec && running);
+  b.classList.toggle('checking', checking);
   b.dataset.lvl = soc < 20 ? 'low' : soc < 50 ? 'mid' : 'ok';
   $('#chgFill').style.width = soc.toFixed(1) + '%';
   // while recovering the % means little – the battery shows the rest voltage and a sweeping band instead
-  $('#chgPct').textContent = rec && running ? `⚡ ${rec.rests.length ? rec.rests[rec.rests.length - 1].toFixed(2) + ' V' : '…'}` : `${Math.round(soc)} %`;
+  $('#chgPct').textContent = checking ? '…' : rec && running ? `⚡ ${rec.rests.length ? rec.rests[rec.rests.length - 1].toFixed(2) + ' V' : '…'}` : `${Math.round(soc)} %`;
   $('#chgEta').textContent = fin ? (ok ? (c.storage ? '✓ At storage voltage' : '✓ Charged') : `Charging ${ui.scriptStatus || 'stopped'}`)
-    : eta === null ? (recovering ? 'Recovering – the time depends on the battery' : 'Estimating…')
+    : eta === null ? (checking ? 'Checking the battery…' : recovering ? 'Recovering – the time depends on the battery' : 'Estimating…')
     : `Ready ≈ ${new Date((now + eta * 3600) * 1000).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} · in ${fmtDur(eta)}`;
   const abort = (L.map(l => l.match(/ChargeAbort: (.*)/)).filter(Boolean).pop() || [])[1];
   if (fin && !ok && abort) $('#chgPct').textContent = '!';
