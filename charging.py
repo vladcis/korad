@@ -101,6 +101,10 @@ for _k, _p in PROFILES.items():
     _p["soc"] = SOC[_k]
 
 
+LEAD_V_OK = 1.80     # rest V/cell from which a lead-acid battery that takes current counts as recovered
+LEAD_V_CC = 2.05     # rest V/cell (≈ 12.3 V) above which no charging test is needed
+
+
 class ChargeError(ValueError):
     pass
 
@@ -193,12 +197,16 @@ def build(p):
                 rec_c = _num(p, "rec_c", pr["rec_c"], 0.005, 0.1, "Recovery current [C]")
                 v_rec = _num(p, "v_rec", typ["v_rec"], 2.30, typ["v_rec_max"], "Recovery voltage limit [V/cell]")
                 rec_check = _num(p, "rec_check_min", pr["rec_check_min"], 0.5, 30, "Recovery check interval [min]")
+            if lead_mode != "normal" and cells * v_rec > PSU_V_MAX:
+                raise ChargeError(f"Recovery limit {cells * v_rec:.2f} V is above the PSU maximum {PSU_V_MAX:g} V")
             if lead_mode == "recond":
                 if not typ["v_eq"]:
                     raise ChargeError("Gel batteries must not be reconditioned (equalised) – the high voltage destroys them")
                 eq_c = _num(p, "eq_c", pr["eq_c"], 0.01, 0.1, "Reconditioning current [C]")
                 v_eq = _num(p, "v_eq", typ["v_eq"], 2.45, typ["v_eq_max"], "Reconditioning voltage [V/cell]")
                 eq_h = _num(p, "eq_h", pr["eq_h"], 0.5, 8, "Reconditioning time [h]")
+                if cells * v_eq > PSU_V_MAX:
+                    raise ChargeError(f"Reconditioning voltage {cells * v_eq:.2f} V is above the PSU maximum {PSU_V_MAX:g} V")
             mode_label = f"{typ['label']} {cells * 2} V" + {"normal": "", "recover": " recovery",
                                                             "recond": " recovery + reconditioning"}[lead_mode]
         else:
@@ -220,10 +228,11 @@ def build(p):
         i_term = max(0.01, cap * cutoff_c)
         if i_term >= i_charge:
             raise ChargeError("Cut-off current must be lower than the charge current")
-        if not timeout and pr["method"] == "lead":
-            # current-limited big batteries (e.g. 72 Ah at 5 A) need longer than the default 16 h
-            timeout = max(pr["timeout_h"], round(1.3 * 1.5 * cap / i_charge))
-        timeout = timeout or pr.get("timeout_h") or max(2.0, _r(1.5 / (i_charge / cap) + 1, 1))
+        if not timeout:
+            if pr["method"] == "lead":   # current-limited big batteries (72 Ah at 5 A) need longer than 16 h
+                timeout = max(pr["timeout_h"], round(1.3 * 1.5 * cap / i_charge))
+            else:
+                timeout = pr.get("timeout_h") or max(2.0, _r(1.5 / (i_charge / cap) + 1, 1))
         v_min = _r(cells * pr["v_min"], 2)
         label = PROFILES[chem]["label"].split(" (")[0]
         model = (pr.get("models") or {}).get(p.get("model") or "")
@@ -256,8 +265,9 @@ def build(p):
                 pre = (f"# recovery decides itself: 'ok' -> normal charging, 'full' -> skip charging,\n"
                        f"# otherwise small current until the battery recovers (rest voltage + charging test every {rec_check:g} min)\n"
                        f"state = lead_recover(psu, {cells}, {i_rec!r}, v_charge={v_max!r}, i_charge={kw['i_charge']!r}, "
-                       f"v_limit_cell={v_rec!r}, v_ok_cell=1.80, check_min={rec_check!r}, log_name={sub('recovery')!r})\n\n")
-                summary.insert(1, ["Recovery", f"first a check: rest voltage ≥ {cells * 1.80:.2f} V and it takes current at "
+                       f"i_term={kw['i_term']!r}, v_limit_cell={v_rec!r}, v_ok_cell={LEAD_V_OK!r}, v_cc_cell={LEAD_V_CC!r}, "
+                       f"check_min={rec_check!r}, log_name={sub('recovery')!r})\n\n")
+                summary.insert(1, ["Recovery", f"first a check: rest voltage ≥ {cells * LEAD_V_OK:.2f} V and it takes current at "
                                                 f"{v_max:.2f} V → normal charging; full → charging skipped; otherwise "
                                                 f"{i_rec:.3f} A up to {cells * v_rec:.2f} V, checked every {rec_check:g} min, until it "
                                                 f"recovers (max 24 h, aborts if no current is taken for 3 h)"])
@@ -272,12 +282,9 @@ def build(p):
                 warn.append("Reconditioning gasses: ventilate, keep sparks away, stop if the battery gets warm; "
                             "flooded – check the electrolyte level afterwards")
             imports = ["cccv_charge", "float_stage"] + (["lead_recover"] if pre else []) + (["lead_equalize"] if post else [])
-            code = _code("cccv_charge", "psu", kw, extra=", ".join(imports))
-            if pre:   # charge only when the battery is not already full
-                head, call = code.split("\ncccv_charge(", 1)
-                call = "cccv_charge(" + call
-                code = head + "\n" + pre + 'if state != "full":\n' + "".join("    " + l + "\n" for l in call.rstrip("\n").split("\n"))
-            code += post
+            # with a recovery the charge runs only when the battery is not already full
+            code = _code("cccv_charge", "psu", kw, extra=", ".join(imports),
+                         before=pre + ('if state != "full":\n' if pre else ""), indent=4 if pre else 0) + post
             if float_h > 0:
                 code += (f"float_stage(psu, {_r(cells * v_float, 2)!r}, {kw['i_charge']!r}, {float_h!r}, "
                          f"log_name={sub('float')!r})\n")
@@ -299,8 +306,10 @@ def build(p):
     return {"name": name, "code": code, "summary": summary, "warnings": warn, "targets": targets}
 
 
-def _code(fn, first, kw, extra=None):
-    args = "".join(f"    {k}={v!r},\n" for k, v in kw.items())
+def _code(fn, first, kw, extra=None, before="", indent=0):
+    """Generated script: header, optional lines `before` the call, the call indented by `indent` spaces."""
+    pad = " " * indent
+    args = "".join(f"{pad}    {k}={v!r},\n" for k, v in kw.items())
     return (f"# Charging – generated by the Charge tab\n"
             f"from lib_batt import {extra or fn}\n\n"
-            f"{fn}(\n    {first},\n{args})\n")
+            f"{before}{pad}{fn}(\n{pad}    {first},\n{args}{pad})\n")

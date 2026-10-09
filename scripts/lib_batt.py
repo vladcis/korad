@@ -184,31 +184,43 @@ def _rest_voltage(psu, i_back, rest_s):
     return v
 
 
-def _takes_current(psu, v, i, secs=15.0):
-    """Charging test: v / i for secs seconds, returns the current the battery takes at the end."""
+def _takes_current(psu, v, i, secs, v_back, i_back):
+    """Charging test: v / i for secs seconds; returns (current the battery takes at the end, Ah delivered).
+    Restores v_back / i_back afterwards – current first, so the raised voltage never meets the full current."""
     psu.set_v(v)
     psu.set_i(i)
     psu.wait(secs)
-    return psu.iout
+    took = psu.iout
+    psu.set_i(i_back)
+    psu.set_v(v_back)
+    return took, took * secs / 3600
 
 
-def lead_recover(psu, cells, i_rec, *, v_charge, i_charge, v_limit_cell=2.50, v_ok_cell=1.80, v_full_cell=2.12,
-                 check_min=1.0, rest_s=15.0, test_s=15.0, timeout_h=24.0, no_accept_h=3.0, interval=5.0,
-                 report_every=300, log_name=None):
+def lead_recover(psu, cells, i_rec, *, v_charge, i_charge, i_term, v_limit_cell=2.50, v_ok_cell=1.80,
+                 v_cc_cell=2.05, v_full_cell=2.12, v_plaus_cell=1.40, check_min=1.0, rest_s=15.0, test_s=15.0,
+                 timeout_h=24.0, no_accept_h=3.0, interval=5.0, report_every=300, log_name=None):
     """Recovery of a deeply discharged / sulfated lead-acid battery before normal charging.
 
-    First decides from the rest voltage and a test_s charging test at v_charge / i_charge:
-      - rest ≥ v_ok_cell and the battery takes ≥ 50 % of i_charge  -> "ok" (normal charging, no recovery)
-      - rest ≥ v_full_cell and it takes almost nothing             -> "full" (skip charging)
+    Decision from the rest voltage and a test_s charging test at the normal v_charge / i_charge:
+      - rest >= v_full_cell and the battery takes less than i_term          -> "full"  (charging skipped)
+      - rest >= v_cc_cell and it takes at least i_term (a healthy battery this
+        full is in the CV region, but still takes more than the cut-off)     -> "ok"    (normal charging)
+      - rest >= v_ok_cell and it takes >= 50 % of i_charge                   -> "ok"
       - otherwise recovery: small constant current i_rec with a raised voltage limit (v_limit_cell); a
         sulfated battery takes almost no current at first, then more as the sulfate dissolves. Every
-        check_min minutes the current is cut for rest_s (rest voltage) and the charging test repeated;
-        when the battery passes both it is "recovered". Aborts when it takes no current for no_accept_h hours, or after timeout_h.
+        check_min minutes the current is cut for rest_s (rest voltage) and the test repeated until the
+        battery passes one of the "ok" conditions ("recovered").
+    Aborts if the rest voltage is below v_plaus_cell per cell (wrong battery / cell count or a dead cell),
+    when the battery takes no current for no_accept_h hours, or after timeout_h.
     Returns "ok", "full" or "recovered".
     """
-    v_limit, v_ok, v_full = cells * v_limit_cell, cells * v_ok_cell, cells * v_full_cell
+    v_limit, v_ok, v_cc, v_full = (cells * x for x in (v_limit_cell, v_ok_cell, v_cc_cell, v_full_cell))
     _check_limits(v_limit, max(i_rec, i_charge))
     accept = 0.5 * i_charge
+
+    def passes(rest, took):
+        return (rest >= v_cc and took >= i_term) or (rest >= v_ok and took >= accept)
+
     psu.off()
     psu.set_v(v_limit)
     psu.set_i(0)
@@ -218,23 +230,25 @@ def lead_recover(psu, cells, i_rec, *, v_charge, i_charge, v_limit_cell=2.50, v_
     if v0 < 1.0:
         psu.off()
         raise ChargeAbort(f"No battery on the output (or an open cell): {v0:.2f} V")
-    i0 = _takes_current(psu, v_charge, i_charge, test_s)
-    if v0 >= v_ok and i0 >= accept:
-        say(psu, f"Battery OK – rest {v0:.2f} V, takes {i0:.3f} A at {v_charge:.2f} V – normal charging, no recovery")
+    if v0 < cells * v_plaus_cell:
         psu.off()
-        return "ok"
-    if v0 >= v_full and i0 < accept:
+        raise ChargeAbort(f"Rest voltage {v0:.2f} V is too low for {cells} cells (< {cells * v_plaus_cell:.1f} V) – "
+                          "wrong battery / cell count, or a dead cell")
+    i0, ah = _takes_current(psu, v_charge, i_charge, test_s, v_limit, i_rec)
+    if v0 >= v_full and i0 < i_term:
         say(psu, f"Battery is full – rest {v0:.2f} V, takes only {i0:.3f} A at {v_charge:.2f} V – charging skipped")
         psu.off()
         return "full"
+    if passes(v0, i0):
+        say(psu, f"Battery OK – rest {v0:.2f} V, takes {i0:.3f} A at {v_charge:.2f} V – normal charging, no recovery")
+        psu.off()
+        return "ok"
     why = "deeply discharged" if v0 < v_ok else f"takes only {i0:.3f} A at {v_charge:.2f} V (high resistance / sulfated)"
     say(psu, f"=== Recovery: {v0:.2f} V, {why}; {i_rec:.3f} A up to {v_limit:.2f} V ===")
-    psu.set_v(v_limit)
-    psu.set_i(i_rec)
     if log_name:
         psu.log_start(log_name, interval)
     t0 = last = last_accept = last_check = time.time()
-    ah, last_report = 0.0, 0.0
+    last_report = 0.0
     try:
         while True:
             psu.wait(interval)
@@ -252,14 +266,13 @@ def lead_recover(psu, cells, i_rec, *, v_charge, i_charge, v_limit_cell=2.50, v_
                                   "it is probably beyond recovery (heavy sulfation or a dead cell)")
             if now - last_check >= check_min * 60:
                 rest = _rest_voltage(psu, i_rec, rest_s)
-                takes = _takes_current(psu, v_charge, i_charge, test_s)
-                psu.set_v(v_limit)
-                psu.set_i(i_rec)
+                takes, d_ah = _takes_current(psu, v_charge, i_charge, test_s, v_limit, i_rec)
+                ah += d_ah
                 last_check = last = time.time()
                 if el - last_report >= report_every:
                     say(psu, f"[{fmt_dur(el)}] recovery  rest {rest:.2f} V, takes {takes:.3f} A at {v_charge:.2f} V  ({ah:.3f} Ah)")
                     last_report = el
-                if rest >= v_ok and takes >= accept:
+                if passes(rest, takes):
                     say(psu, f"[{fmt_dur(el)}] RECOVERED – rest {rest:.2f} V, takes {takes:.3f} A – normal charging follows")
                     return "recovered"
             if el > timeout_h * 3600:
