@@ -213,6 +213,14 @@ app = Flask(__name__, static_folder=STATIC_DIR, static_url_path="/static")
 ctl: Controller = None  # type: ignore
 
 
+@app.after_request
+def _no_stale_static(resp):
+    """The UI files change with every version: make the browser / webview revalidate them on each load."""
+    if request.path.startswith("/static/") or request.path == "/":
+        resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
 def ok(**kw):
     kw.setdefault("ok", True)
     return jsonify(kw)

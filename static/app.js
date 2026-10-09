@@ -270,7 +270,7 @@ function chgApplyChem() {
     : k === 'lead' ? [['normal', 'Normal charge'], ['recover', 'Recovery (deep discharge)'], ['recond', 'Recovery + reconditioning']]
     : [['full', `Full charge (${p.v_cell?.toFixed(2)} V/cell)`], ['storage', `Storage (${p.v_storage?.toFixed(2)} V/cell)`]],
     { nimh: 'fast', lead: 'normal' }[k] || 'full');
-  setv('#chgRecC', p.rec_c); setv('#chgEqC', p.eq_c); setv('#chgEqH', p.eq_h);
+  setv('#chgRecC', p.rec_c); setv('#chgRecChk', p.rec_check_min); setv('#chgEqC', p.eq_c); setv('#chgEqH', p.eq_h);
   const cs = $('#chgCellsSel'), ci = $('#chgCells');
   cs.hidden = !p.cells_choices; ci.hidden = !!p.cells_choices;
   if (p.cells_choices) opts(cs, p.cells_choices.map(c => [c, `${c * 2} V (${c} cells)`]), p.cells);
@@ -305,7 +305,7 @@ function chgParams() {
   return {
     chem: $('#chgChem').value, model: $('#chgModel').value, lead_type: $('#chgLeadType').value, nimh_type: $('#chgNimhType').value,
     mode: $('#chgMode').value, cells: p.cells_choices ? +$('#chgCellsSel').value : n('#chgCells'),
-    rec_c: n('#chgRecC'), v_rec: n('#chgRecV'), eq_c: n('#chgEqC'), v_eq: n('#chgEqV'), eq_h: n('#chgEqH'),
+    rec_c: n('#chgRecC'), rec_check_min: n('#chgRecChk'), v_rec: n('#chgRecV'), eq_c: n('#chgEqC'), v_eq: n('#chgEqV'), eq_h: n('#chgEqH'),
     capacity_mah: n('#chgCap'), c_rate: n('#chgC'), cutoff_c: n('#chgCut'), v_cell: n('#chgVcell'), v_float: n('#chgVfloat'),
     float_h: n('#chgFloatH'), timeout_h: n('#chgTime'), ah_pct: n('#chgAh'), balancer: $('#chgBal').checked, log: $('#chgLog').value.trim(),
   };
@@ -379,7 +379,7 @@ function chgLive(s) {
     if (ahR) ah = +ahR[1];
     const rest = (L.map(l => l.match(/rest ([\d.]+) V/)).filter(Boolean).pop() || [])[1];
     soc = rest ? interp(c.soc.ocv, rest / c.cells) : soc0; eta = null;
-    phase = `Recovery – small current, rest voltage checked every 10 min${rest ? ` (last ${(+rest).toFixed(2)} V)` : ''}`;
+    phase = `Recovery – small current, rest voltage + charging test every ${c.rec_check_min || 1} min${rest ? ` (last rest ${(+rest).toFixed(2)} V)` : ''}`;
   } else if (recond) {
     const r0 = chg.lines.find(l => l.line.startsWith('=== Reconditioning'));
     eta = Math.max(0, (c.eq_h || 0) - (now - r0.t) / 3600) + (c.float_h || 0); soc = 100;

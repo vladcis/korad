@@ -59,7 +59,7 @@ PROFILES = {
             "caca": {"label": "Calcium Ca/Ca (car, maintenance-free)", "v_cell": 2.47, "v_float": 2.27, "v_rec": 2.55,
                      "v_rec_max": 2.65, "v_eq": 2.63, "v_eq_max": 2.70},
         },
-        "v_range": [2.25, 2.50], "rec_c": 0.02, "eq_c": 0.03, "eq_h": 2,
+        "v_range": [2.25, 2.50], "rec_c": 0.02, "rec_check_min": 1, "eq_c": 0.03, "eq_h": 2,
         "hint": "Bulk (CC) → absorption (CV) → float. Car batteries are usually Ca/Ca (14.8 V). Below 1.75 V/cell (10.5 V for 12 V) the battery is deeply "
                 "discharged – use Recovery. Reconditioning (equalisation) gasses: flooded batteries, AGM only "
                 "occasionally, never gel.",
@@ -192,6 +192,7 @@ def build(p):
             if lead_mode != "normal":
                 rec_c = _num(p, "rec_c", pr["rec_c"], 0.005, 0.1, "Recovery current [C]")
                 v_rec = _num(p, "v_rec", typ["v_rec"], 2.30, typ["v_rec_max"], "Recovery voltage limit [V/cell]")
+                rec_check = _num(p, "rec_check_min", pr["rec_check_min"], 0.5, 30, "Recovery check interval [min]")
             if lead_mode == "recond":
                 if not typ["v_eq"]:
                     raise ChargeError("Gel batteries must not be reconditioned (equalised) – the high voltage destroys them")
@@ -247,19 +248,19 @@ def build(p):
                    "v_cell": v_cell, "storage": bool(storage)}
         if pr["method"] == "lead":
             est += float_h
-            targets.update(float_h=float_h, lead_mode=lead_mode)
+            targets.update(float_h=float_h, lead_mode=lead_mode, rec_check_min=rec_check if lead_mode != "normal" else None)
             sub = lambda name: f"{log}_{name}" if log else None   # noqa: E731
             pre, post = "", ""
             if lead_mode != "normal":
                 i_rec = _r(max(0.02, min(PSU_I_MAX, cap * rec_c)))
                 pre = (f"# recovery decides itself: 'ok' -> normal charging, 'full' -> skip charging,\n"
-                       f"# otherwise small current until the battery recovers (rest voltage + charging test every 10 min)\n"
+                       f"# otherwise small current until the battery recovers (rest voltage + charging test every {rec_check:g} min)\n"
                        f"state = lead_recover(psu, {cells}, {i_rec!r}, v_charge={v_max!r}, i_charge={kw['i_charge']!r}, "
-                       f"v_limit_cell={v_rec!r}, v_ok_cell=1.80, log_name={sub('recovery')!r})\n\n")
+                       f"v_limit_cell={v_rec!r}, v_ok_cell=1.80, check_min={rec_check!r}, log_name={sub('recovery')!r})\n\n")
                 summary.insert(1, ["Recovery", f"first a check: rest voltage ≥ {cells * 1.80:.2f} V and it takes current at "
                                                 f"{v_max:.2f} V → normal charging; full → charging skipped; otherwise "
-                                                f"{i_rec:.3f} A up to {cells * v_rec:.2f} V until it recovers "
-                                                f"(max 24 h, aborts if no current is taken for 3 h)"])
+                                                f"{i_rec:.3f} A up to {cells * v_rec:.2f} V, checked every {rec_check:g} min, until it "
+                                                f"recovers (max 24 h, aborts if no current is taken for 3 h)"])
                 warn.append("Recovery time depends on the battery (hours, up to 24 h) – not included in the estimate")
             if lead_mode == "recond":
                 i_eq = _r(max(0.02, min(PSU_I_MAX, cap * eq_c)))

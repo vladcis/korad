@@ -184,7 +184,7 @@ def _rest_voltage(psu, i_back, rest_s):
     return v
 
 
-def _takes_current(psu, v, i, secs=30.0):
+def _takes_current(psu, v, i, secs=15.0):
     """Charging test: v / i for secs seconds, returns the current the battery takes at the end."""
     psu.set_v(v)
     psu.set_i(i)
@@ -193,17 +193,17 @@ def _takes_current(psu, v, i, secs=30.0):
 
 
 def lead_recover(psu, cells, i_rec, *, v_charge, i_charge, v_limit_cell=2.50, v_ok_cell=1.80, v_full_cell=2.12,
-                 check_min=10.0, rest_s=60.0, timeout_h=24.0, no_accept_h=3.0, interval=5.0, report_every=300,
-                 log_name=None):
+                 check_min=1.0, rest_s=15.0, test_s=15.0, timeout_h=24.0, no_accept_h=3.0, interval=5.0,
+                 report_every=300, log_name=None):
     """Recovery of a deeply discharged / sulfated lead-acid battery before normal charging.
 
-    First decides from the rest voltage and a 30 s charging test at v_charge / i_charge:
+    First decides from the rest voltage and a test_s charging test at v_charge / i_charge:
       - rest ≥ v_ok_cell and the battery takes ≥ 50 % of i_charge  -> "ok" (normal charging, no recovery)
       - rest ≥ v_full_cell and it takes almost nothing             -> "full" (skip charging)
       - otherwise recovery: small constant current i_rec with a raised voltage limit (v_limit_cell); a
         sulfated battery takes almost no current at first, then more as the sulfate dissolves. Every
-        check_min minutes the rest voltage is measured and the charging test repeated; when the battery
-        passes both it is "recovered". Aborts when it takes no current for no_accept_h hours, or after timeout_h.
+        check_min minutes the current is cut for rest_s (rest voltage) and the charging test repeated;
+        when the battery passes both it is "recovered". Aborts when it takes no current for no_accept_h hours, or after timeout_h.
     Returns "ok", "full" or "recovered".
     """
     v_limit, v_ok, v_full = cells * v_limit_cell, cells * v_ok_cell, cells * v_full_cell
@@ -218,7 +218,7 @@ def lead_recover(psu, cells, i_rec, *, v_charge, i_charge, v_limit_cell=2.50, v_
     if v0 < 1.0:
         psu.off()
         raise ChargeAbort(f"No battery on the output (or an open cell): {v0:.2f} V")
-    i0 = _takes_current(psu, v_charge, i_charge)
+    i0 = _takes_current(psu, v_charge, i_charge, test_s)
     if v0 >= v_ok and i0 >= accept:
         say(psu, f"Battery OK – rest {v0:.2f} V, takes {i0:.3f} A at {v_charge:.2f} V – normal charging, no recovery")
         psu.off()
@@ -252,19 +252,18 @@ def lead_recover(psu, cells, i_rec, *, v_charge, i_charge, v_limit_cell=2.50, v_
                                   "it is probably beyond recovery (heavy sulfation or a dead cell)")
             if now - last_check >= check_min * 60:
                 rest = _rest_voltage(psu, i_rec, rest_s)
-                takes = _takes_current(psu, v_charge, i_charge)
+                takes = _takes_current(psu, v_charge, i_charge, test_s)
                 psu.set_v(v_limit)
                 psu.set_i(i_rec)
                 last_check = last = time.time()
-                say(psu, f"[{fmt_dur(el)}] recovery  rest {rest:.2f} V, takes {takes:.3f} A at {v_charge:.2f} V  ({ah:.3f} Ah)")
+                if el - last_report >= report_every:
+                    say(psu, f"[{fmt_dur(el)}] recovery  rest {rest:.2f} V, takes {takes:.3f} A at {v_charge:.2f} V  ({ah:.3f} Ah)")
+                    last_report = el
                 if rest >= v_ok and takes >= accept:
                     say(psu, f"[{fmt_dur(el)}] RECOVERED – rest {rest:.2f} V, takes {takes:.3f} A – normal charging follows")
                     return "recovered"
             if el > timeout_h * 3600:
                 raise ChargeAbort(f"Recovery time limit {timeout_h:g} h – the battery did not recover")
-            if el - last_report >= report_every:
-                say(psu, f"[{fmt_dur(el)}] recovery  U={v:.2f} V  I={i:.3f} A  ({ah:.3f} Ah)")
-                last_report = el
     finally:
         psu.off()
         if log_name:
