@@ -372,7 +372,7 @@ function chgLive(s) {
   const recond = L.some(l => l.startsWith('=== Reconditioning')) && !inFloat;
   const pre = L.some(l => l.startsWith('Precharging')) && !L.some(l => /precharged/.test(l));
   const inCV = c.method === 'cccv' && s.output && s.mode === 'CV' && !inFloat;
-  let soc = soc0 + ah * c.soc.eff / c.cap_ah * 100, eta = null, phase;
+  let soc = soc0 + ah * c.soc.eff / c.cap_ah * 100, eta = null, phase, phaseNote = '';
   if (c.method === 'cccv' && !inCV && !inFloat) soc = Math.min(soc, c.storage ? target - 1 : cvAt - 1);
   if (recovering) {
     const ahR = L.filter(l => / recovery /.test(l)).map(l => l.match(/([\d.]+) Ah/)).filter(Boolean).pop();
@@ -387,9 +387,13 @@ function chgLive(s) {
   } else if (inCV) {
     chg.cv.push([now, s.iout]); while (chg.cv.length && chg.cv[0][0] < now - 900) chg.cv.shift();
     const r = Math.log(Math.max(s.iout, c.i_term) / c.i_term) / Math.log(c.i_charge / c.i_term);
-    // mean of Ah counting (depends on the start estimate) and the current decay (depends on the cell)
+    // mean of Ah counting (depends on the start estimate) and the current decay (depends on the cell) –
+    // but only when CV came after real charging: a battery that is in CV from the first seconds is not
+    // nearly full, it has a high internal resistance (sulfated lead-acid, damaged cell)
     const socCV = target - (target - Math.min(cvAt, target)) * Math.min(1, Math.max(0, r));
-    soc = (Math.min(soc, target - 1) + socCV) / 2;
+    const cvEarly = /^\[00:0[0-4]:\d\d\] CC → CV/m.test(L.join('\n')) && soc0 < cvAt - 15;
+    if (cvEarly) phaseNote = ' · in CV from the start: high internal resistance, % is a rough guess';
+    else soc = (Math.min(soc, target - 1) + socCV) / 2;
     // current falls ~exponentially in CV: fit ln(I) over the last minutes -> time until I = cut-off
     const pts = chg.cv.filter(p => p[1] > 0);
     if (pts.length > 10 && pts[pts.length - 1][0] - pts[0][0] > 120) {
@@ -429,7 +433,7 @@ function chgLive(s) {
     : `Ready ≈ ${new Date((now + eta * 3600) * 1000).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} · in ${fmtDur(eta)}`;
   const abort = (L.map(l => l.match(/ChargeAbort: (.*)/)).filter(Boolean).pop() || [])[1];
   if (fin && !ok && abort) $('#chgPct').textContent = '!';
-  $('#chgPhase').textContent = fin ? (abort || c.name) : `${phase}${c.storage ? ` · target storage ≈ ${Math.round(target)} %` : ''}`;
+  $('#chgPhase').textContent = fin ? (abort || c.name) : `${phase}${phaseNote}${c.storage ? ` · target storage ≈ ${Math.round(target)} %` : ''}`;
   $('#chgStats').innerHTML = sumTable([
     ['Voltage / current', `${s.vout.toFixed(2)} V · ${s.iout.toFixed(3)} A`],
     ['Charged', `${ah.toFixed(3)} Ah of ${c.cap_ah} Ah`],

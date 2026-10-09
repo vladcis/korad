@@ -205,7 +205,7 @@ def lead_recover(psu, cells, i_rec, *, v_charge, i_charge, i_term, v_limit_cell=
       - rest >= v_full_cell and the battery takes less than i_term          -> "full"  (charging skipped)
       - rest >= v_cc_cell and it takes at least i_term (a healthy battery this
         full is in the CV region, but still takes more than the cut-off)     -> "ok"    (normal charging)
-      - rest >= v_ok_cell and it takes >= 50 % of i_charge                   -> "ok"
+      - rest >= v_ok_cell and it takes the whole i_charge (CC)                -> "ok"
       - otherwise recovery: small constant current i_rec with a raised voltage limit (v_limit_cell); a
         sulfated battery takes almost no current at first, then more as the sulfate dissolves. Every
         check_min minutes the current is cut for rest_s (rest voltage) and the test repeated until the
@@ -216,7 +216,7 @@ def lead_recover(psu, cells, i_rec, *, v_charge, i_charge, i_term, v_limit_cell=
     """
     v_limit, v_ok, v_cc, v_full = (cells * x for x in (v_limit_cell, v_ok_cell, v_cc_cell, v_full_cell))
     _check_limits(v_limit, max(i_rec, i_charge))
-    accept = 0.5 * i_charge
+    accept = 0.9 * i_charge     # a healthy battery below v_cc_cell is in CC: it takes the whole charge current
 
     def passes(rest, took):
         return (rest >= v_cc and took >= i_term) or (rest >= v_ok and took >= accept)
