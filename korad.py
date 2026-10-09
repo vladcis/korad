@@ -63,7 +63,9 @@ class Korad:
             errors = []
             for p in ports:
                 try:
-                    s = serial.Serial(p, self.baud, timeout=self.timeout, write_timeout=1)
+                    # exclusive: a second program (another KORAD instance) must not open the same port,
+                    # otherwise both talk to the PSU and the replies get mixed up
+                    s = serial.Serial(p, self.baud, timeout=self.timeout, write_timeout=1, exclusive=True)
                     time.sleep(0.05)
                     self.ser = s
                     idn = self._tx("*IDN?", until_timeout=True).strip()
@@ -74,7 +76,10 @@ class Korad:
                     errors.append(f"{p}: no response")
                     s.close()
                 except Exception as e:  # noqa: BLE001
-                    errors.append(f"{p}: {e}")
+                    msg = str(e)
+                    if "exclusively lock" in msg or "Resource busy" in msg or "Access is denied" in msg or "PermissionError" in msg:
+                        msg = "in use by another program (another KORAD window or instance?)"
+                    errors.append(f"{p}: {msg}")
                 self.ser = None
             raise KoradError("PSU not found. " + ("; ".join(errors) if errors else "No serial ports."))
 
