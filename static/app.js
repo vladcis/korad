@@ -357,6 +357,7 @@ function chgLive(s) {
   const c = chg.cur, box = $('#chgLive');
   const mine = c && ui.scriptName === 'charge:' + c.name;
   box.hidden = !mine; if (!mine) return;
+  if (chg.runKey !== c.started) { chg.runKey = c.started; chg.maxSoc = 0; chg.cv = []; }   // new run: no carry-over
   const running = ui.scriptRunning, L = chg.lines.map(l => l.line);
   const now = s.t || Date.now() / 1000, el = (now - c.started) / 3600;
   // start voltage ("Battery: 3.71 V") and charged Ah (last progress line, not the float stage)

@@ -207,6 +207,9 @@ def build(p):
                 eq_h = _num(p, "eq_h", pr["eq_h"], 0.5, 8, "Reconditioning time [h]")
                 if cells * v_eq > PSU_V_MAX:
                     raise ChargeError(f"Reconditioning voltage {cells * v_eq:.2f} V is above the PSU maximum {PSU_V_MAX:g} V")
+            if p.get("lead_type") == "caca" and cells == 6 and cap < 30:
+                warn.append(f"{_cap(cap)} is small for a Ca/Ca car battery (usually 40–100 Ah) – the capacity sets the "
+                            "charge current and the recovery test; check the label")
             mode_label = f"{typ['label']} {cells * 2} V" + {"normal": "", "recover": " recovery",
                                                             "recond": " recovery + reconditioning"}[lead_mode]
         else:
