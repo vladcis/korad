@@ -229,10 +229,11 @@ th{position:sticky;top:0;background:#1a1b1e;color:var(--muted)}
 @keyframes battsweep{from{background-position:-45% 0}to{background-position:145% 0}}
 .batt.checking .batt-fill{width:100% !important;background-color:transparent;background-image:linear-gradient(90deg,transparent 0%,#8a8f9a 50%,transparent 100%);background-size:35% 100%;background-repeat:no-repeat;animation:battsweep 1.2s linear infinite}
 .batt.checking .batt-pct{color:#cfd3dc}
+.batt.discharging .batt-fill{background-color:var(--cyan);background-image:linear-gradient(135deg,#fff3 25%,transparent 25%,transparent 50%,#fff3 50%,#fff3 75%,transparent 75%);background-size:28px 28px;animation:battflow 1s linear infinite reverse}
 .batt.recovering .batt-pct{font-size:22px}
 .accbar{display:inline-block;vertical-align:middle;width:120px;height:9px;background:#15161a;border:1px solid #000;border-radius:5px;overflow:hidden;margin-right:8px}
 .accbar i{display:block;height:100%;background:linear-gradient(90deg,var(--amber),var(--ok));transition:width 1s}
-@media (prefers-reduced-motion:reduce){.batt.charging .batt-fill,.batt.recovering .batt-fill,.batt.checking .batt-fill{animation:none}}
+@media (prefers-reduced-motion:reduce){.batt.charging .batt-fill,.batt.recovering .batt-fill,.batt.checking .batt-fill,.batt.discharging .batt-fill{animation:none}}
 .batt-pct{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:700 26px/1 ui-monospace,monospace;color:#fff;text-shadow:0 1px 3px #000}
 .chgstats{display:flex;flex-direction:column;gap:4px;min-width:0}
 .chgeta{font-size:20px;font-weight:700;color:var(--text)}

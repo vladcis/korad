@@ -97,8 +97,18 @@ SOC = {
     "nimh": {"ocv": [[1.0, 0], [1.2, 20], [1.25, 40], [1.3, 70], [1.4, 95], [1.45, 100]], "eff": 0.8, "cv_at": 100},
 }
 SOC["lipo"] = SOC["liion"]
+# discharge capacity test: end voltage / nominal voltage per cell, gentle end voltage in the hint
+TEST = {
+    "liion": {"v_end": 3.00, "v_nom": 3.7, "v_end_min": 2.5, "v_end_max": 3.6},
+    "lipo": {"v_end": 3.30, "v_nom": 3.7, "v_end_min": 3.0, "v_end_max": 3.7},
+    "lihv": {"v_end": 3.30, "v_nom": 3.8, "v_end_min": 3.0, "v_end_max": 3.7},
+    "lifepo4": {"v_end": 2.80, "v_nom": 3.2, "v_end_min": 2.5, "v_end_max": 3.2},
+    "lead": {"v_end": 1.80, "v_nom": 2.0, "v_end_min": 1.70, "v_end_max": 2.05},
+    "nimh": {"v_end": 1.00, "v_nom": 1.2, "v_end_min": 0.9, "v_end_max": 1.2},
+}
 for _k, _p in PROFILES.items():
     _p["soc"] = SOC[_k]
+    _p["test"] = TEST[_k]
 
 
 LEAD_V_OK = 1.80     # rest V/cell from which a lead-acid battery that takes current counts as recovered
@@ -149,6 +159,9 @@ def build(p):
     ah_max = _r(cap * ah_pct / 100, 3)
     timeout = p.get("timeout_h")
     timeout = None if timeout in (None, "", 0, "0") else _num(p, "timeout_h", None, 0.1, 48, "Time limit [h]")
+
+    if p.get("mode") == "captest":
+        return _build_test(p, pr, chem, cells, cap, log, timeout, warn)
 
     if pr["method"] == "nimh":
         typ = pr["types"].get(p.get("nimh_type") or "nimh")
@@ -306,6 +319,55 @@ def build(p):
         ["Capacity limit", f"{ah_max:g} Ah ({ah_pct:g} %)"],
         ["CSV log", log or "off"],
     ]
+    return {"name": name, "code": code, "summary": summary, "warnings": warn, "targets": targets}
+
+
+def _build_test(p, pr, chem, cells, cap, log, timeout, warn):
+    """Discharge capacity test with an external load, optionally followed by the normal charge."""
+    t = pr["test"]
+    v_nom = _r(cells * t["v_nom"], 2)
+    load_a = _num(p, "load_a", _r(cap * 0.05, 2), 0.01, 50, "Load current [A]")
+    kind = p.get("load_type") if p.get("load_type") in ("bulb", "resistor", "constant") else "bulb"
+    v_end_cell = _num(p, "test_v_end", t["v_end"], t["v_end_min"], t["v_end_max"], "End voltage [V/cell]")
+    v_end = _r(cells * v_end_cell, 2)
+    v_meas = _r(cells * (pr.get("v_cell") or pr.get("v_cell_max") or 2.4) + 0.5, 2)   # PSU set voltage while measuring (above the battery)
+    if v_meas > PSU_V_MAX:
+        v_meas = PSU_V_MAX
+    recharge = bool(p.get("recharge", True))
+    if load_a > PSU_I_MAX and recharge:
+        warn.append(f"Load {load_a:.2f} A is more than the PSU can supply ({PSU_I_MAX:g} A) - disconnect it before the recharge")
+    c_rate = load_a / cap
+    est = cap / load_a if c_rate > 0 else 0
+    timeout = timeout or min(48.0, max(2.0, round(est * 1.6, 1)))
+    name = f"Capacity test {pr['label'].split(' (')[0]} {cells}S {_cap(cap)}"
+    kw = dict(v_end=v_end, v_nom=v_nom, v_max=v_meas, load=kind, timeout_h=timeout,
+              log_name=f"{log}_test" if log else None, hold=True)
+    code = _code("capacity_test", f"psu, {cells}, {load_a!r}", kw)
+    summary = [
+        ["Test", f"{name} - external load across the battery, the PSU only measures"],
+        ["Load", f"{load_a:.2f} A at {v_nom:.1f} V ({kind}) = {c_rate:.3g} C"
+                 + (" - the standard rate is C/20 (0.05 C)" if abs(c_rate - 0.05) > 0.02 else "")],
+        ["End voltage", f"{v_end:.2f} V ({v_end_cell:.2f} V/cell)" + (" - the standard capacity cut-off is 1.75 V/cell"
+                                                                        if chem == "lead" else "")],
+        ["Estimated time", f"≈ {_dur(est)} if the battery has its rated {_cap(cap)}"],
+        ["Time limit", f"{timeout:g} h"],
+        ["Afterwards", "the PSU supplies the load at the end voltage; " + ("then the normal charge below" if recharge
+                       else "disconnect the load and charge the battery soon")],
+    ]
+    warn.insert(0, "Connect the load only after Start, when the progress says so - the voltage drop confirms it")
+    targets = {"method": "test", "chem": chem, "cells": cells, "cap_ah": _r(cap, 3), "load_a": load_a, "load": kind,
+               "v_end": v_end, "v_nom": v_nom, "timeout_h": timeout, "est_h": _r(est, 2), "soc": SOC[chem],
+               "recharge": recharge, "i_charge": None, "i_term": None, "v_max": v_meas}
+    if recharge:
+        q = dict(p, mode="normal" if chem == "lead" else "full", timeout_h=None)
+        inner = build(q)
+        body = inner["code"].split("\n", 2)[2]          # drop the header + import line of the charge code
+        imp = inner["code"].split("\n")[1].replace("from lib_batt import ", "")
+        code = code.replace("from lib_batt import capacity_test", f"from lib_batt import capacity_test, {imp}", 1)
+        code += "\n# recharge right after the test (a discharged battery must not be left standing)\n" + body
+        summary += [[f"Recharge: {k}", v] for k, v in inner["summary"][1:5]]
+        warn += [w for w in inner["warnings"] if w not in warn]
+        targets["charge"] = inner["targets"]
     return {"name": name, "code": code, "summary": summary, "warnings": warn, "targets": targets}
 
 

@@ -31,6 +31,8 @@ Charging a Li-ion cell with the `10_charge_liion.py` script: CV phase at 4.20 V,
   Pick the type, cell count and capacity; the summary shows the resulting voltage, current, cut-off, limits and an
   estimated charge time. Starting needs a confirmation. While charging, an animated battery shows the estimated
   state of charge in % and when the battery will be ready.
+  A **capacity test** mode discharges the battery through an external load (bulb, resistor, electronic load) while
+  the PSU measures: Ah, Wh, internal resistance, then the PSU takes over the load and optionally recharges.
 - **Scripts**: Python scripts with a `psu` object. You can save, edit, run and stop them, with output in real time.
   Includes ready-made **battery chargers** for Li-ion, LiFePO4, lead-acid and NiMH.
 - **Logs**: CSV logging of U / I / P with a configurable interval, shown as a chart and a table, and downloadable.

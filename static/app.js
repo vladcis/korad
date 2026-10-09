@@ -266,10 +266,13 @@ function chgApplyChem() {
   $$('#tab-charge [data-hide]').forEach(e => e.hidden = e.dataset.hide.split(' ').includes(k));
   opts($('#chgModel'), [['', 'Generic cell'], ...Object.entries(p.models || {}).map(([m, x]) => [m, x.label])], '');
   if (p.types) opts(k === 'lead' ? $('#chgLeadType') : $('#chgNimhType'), Object.entries(p.types).map(([t, x]) => [t, x.label]));
-  opts($('#chgMode'), k === 'nimh' ? [['fast', 'Fast – −ΔV end'], ['slow', 'Slow – 0.1 C, 14 h']]
+  const modes = k === 'nimh' ? [['fast', 'Fast – −ΔV end'], ['slow', 'Slow – 0.1 C, 14 h']]
     : k === 'lead' ? [['normal', 'Normal charge'], ['recover', 'Recovery (deep discharge)'], ['recond', 'Recovery + reconditioning']]
-    : [['full', `Full charge (${p.v_cell?.toFixed(2)} V/cell)`], ['storage', `Storage (${p.v_storage?.toFixed(2)} V/cell)`]],
-    { nimh: 'fast', lead: 'normal' }[k] || 'full');
+    : [['full', `Full charge (${p.v_cell?.toFixed(2)} V/cell)`], ['storage', `Storage (${p.v_storage?.toFixed(2)} V/cell)`]];
+  opts($('#chgMode'), [...modes, ['captest', 'Capacity test (external load)']], { nimh: 'fast', lead: 'normal' }[k] || 'full');
+  $('#chgMode').closest('.fld').hidden = false;      // every chemistry has at least the capacity test
+  setv('#chgTestVend', p.test.v_end); $('#chgTestVend').min = p.test.v_end_min; $('#chgTestVend').max = p.test.v_end_max;
+  setv('#chgLoadA', ''); $('#chgRecharge').checked = true;
   setv('#chgRecC', p.rec_c); setv('#chgRecChk', p.rec_check_min); setv('#chgEqC', p.eq_c); setv('#chgEqH', p.eq_h);
   const cs = $('#chgCellsSel'), ci = $('#chgCells');
   cs.hidden = !p.cells_choices; ci.hidden = !!p.cells_choices;
@@ -306,6 +309,7 @@ function chgParams() {
   return {
     chem: $('#chgChem').value, model: $('#chgModel').value, lead_type: $('#chgLeadType').value, nimh_type: $('#chgNimhType').value,
     mode: $('#chgMode').value, cells: p.cells_choices ? +$('#chgCellsSel').value : n('#chgCells'),
+    load_a: n('#chgLoadA'), load_type: $('#chgLoadType').value, test_v_end: n('#chgTestVend'), recharge: $('#chgRecharge').checked,
     rec_c: n('#chgRecC'), rec_check_min: n('#chgRecChk'), v_rec: n('#chgRecV'), eq_c: n('#chgEqC'), v_eq: n('#chgEqV'), eq_h: n('#chgEqH'),
     capacity_mah: n('#chgCap'), c_rate: n('#chgC'), cutoff_c: n('#chgCut'), v_cell: n('#chgVcell'), v_float: n('#chgVfloat'),
     float_h: n('#chgFloatH'), timeout_h: n('#chgTime'), ah_pct: n('#chgAh'), balancer: $('#chgBal').checked, log: $('#chgLog').value.trim(),
@@ -326,7 +330,16 @@ function chgPreview() {
     $('#chgAhInfo').textContent = cap ? `= ${(cap * (q.ah_pct || 0) / 100).toFixed(2)} Ah` : '';
     $('#chgVInfo').textContent = q.cells && q.v_cell ? `= ${(q.cells * q.v_cell).toFixed(2)} V pack` : '';
     $('#chgBalRow').classList.toggle('need', (q.cells || 0) > 1);
-    $$('#tab-charge [data-modes]').forEach(e => { if (e.dataset.show.split(' ').includes(k)) e.hidden = !e.dataset.modes.split(' ').includes(q.mode); });
+    $$('#tab-charge [data-modes]').forEach(e => { if (!e.dataset.show || e.dataset.show.split(' ').includes(k)) e.hidden = !e.dataset.modes.split(' ').includes(q.mode); });
+    // capacity test: the charging rows matter only when the battery is recharged afterwards
+    const test = q.mode === 'captest', hideCharge = test && !q.recharge;
+    ['#chgC', '#chgVcell', '#chgVfloat', '#chgFloatH', '#chgCut', '#chgAh', '#chgModel'].forEach(id => {
+      const row = $(id).closest('.fld'); if (!row) return;
+      const shown = !row.dataset.show || row.dataset.show.split(' ').includes(k);
+      row.hidden = !shown || hideCharge;
+    });
+    if (test) { const def = cap ? (cap * 0.05).toFixed(2) : ''; $('#chgLoadA').placeholder = def; $('#chgLoadInfo').textContent = cap ? `at ${(q.cells * p.test.v_nom).toFixed(1)} V · C/20 = ${def} A` : '';
+      $('#chgTestVInfo').textContent = q.cells && q.test_v_end ? `= ${(q.cells * q.test_v_end).toFixed(2)} V` : ''; }
     $('#chgRecA').textContent = cap ? `= ${(cap * (q.rec_c || 0)).toFixed(3)} A` : '';
     $('#chgEqA').textContent = cap ? `= ${(cap * (q.eq_c || 0)).toFixed(3)} A` : '';
     $('#chgRecVInfo').textContent = q.cells && q.v_rec ? `= ${(q.cells * q.v_rec).toFixed(2)} V` : '';
@@ -373,14 +386,36 @@ function chgLive(s) {
   const recovering = L.some(l => l.startsWith('=== Recovery')) && !L.some(l => /RECOVERED|Battery OK|Battery is full/.test(l));
   const recond = L.some(l => l.startsWith('=== Reconditioning')) && !inFloat;
   const pre = L.some(l => l.startsWith('Precharging')) && !L.some(l => /precharged/.test(l));
+  const testLine = L.find(l => l.startsWith('=== Capacity test')), endLine = L.find(l => /\] END - |time limit .* stopping at|^Capacity ≈/.test(l));
+  const testing = !!testLine && !endLine && !L.some(l => l.startsWith('=== Charging'));
   // nothing measured yet (start-up probe / recovery test): no % at all, the battery shows a 'checking' sweep
-  const checking = running && !vStart && !recovering && !inFloat && !recond;
+  const checking = running && !vStart && !recovering && !inFloat && !recond && !testing;
   const cvLine = L.some(l => / CC → CV /.test(l));   // a real CC→CV transition reported by the script
   const inCV = c.method === 'cccv' && s.output && s.mode === 'CV' && !inFloat && !checking && cvLine;
   let soc = soc0 + ah * c.soc.eff / c.cap_ah * 100, eta = null, phase, phaseNote = '';
   if (c.method === 'cccv' && !inCV && !inFloat) soc = Math.min(soc, c.storage ? target - 1 : cvAt - 1);
   let rec = null;   // recovery progress: rest voltage history and how much current the battery takes vs. needed
-  if (checking) {
+  if (testing) {
+    const dis = L.filter(l => / discharge /.test(l)).map(l => l.match(/U=([\d.]+) V\s+I≈([\d.]+) A\s+([\d.]+) Ah\s+([\d.]+) Wh/)).filter(Boolean).pop();
+    const ahOut = dis ? +dis[3] : 0, wh = dis ? +dis[4] : 0;
+    const v0 = (L.map(l => l.match(/^Battery without load: ([\d.]+) V/)).find(Boolean) || [])[1];
+    const rM = (L.map(l => l.match(/internal resistance ≈ ([\d.]+) Ω/)).find(Boolean) || [])[1];
+    const waiting = !L.some(l => /^Load detected|No voltage drop seen/.test(l));
+    const start = v0 ? interp(c.soc.ocv, v0 / c.cells) : 100;
+    soc = Math.max(0, start - ahOut / c.cap_ah * 100);
+    // ETA: voltage slope over the last 20 min (stop at the end voltage)
+    chg.dis = chg.dis || []; chg.dis.push([now, s.vout]); while (chg.dis.length && chg.dis[0][0] < now - 1200) chg.dis.shift();
+    const d = chg.dis; eta = null;
+    if (!waiting && d.length > 20 && d[d.length - 1][0] - d[0][0] > 600) {
+      const n = d.length, mt = d.reduce((a, q) => a + q[0], 0) / n, mv = d.reduce((a, q) => a + q[1], 0) / n;
+      const k = d.reduce((a, q) => a + (q[0] - mt) * (q[1] - mv), 0) / d.reduce((a, q) => a + (q[0] - mt) ** 2, 0);
+      if (k < -1e-7) eta = Math.max(0, (s.vout - c.v_end) / -k / 3600);
+    }
+    phase = waiting ? 'Waiting for the load – connect the bulb / resistor across the battery now'
+      : `Discharging through the external load (≈ ${(c.load_a * Math.pow(Math.max(s.vout, 0.1) / c.v_nom, c.load === 'resistor' ? 1 : c.load === 'constant' ? 0 : 0.55)).toFixed(2)} A) down to ${c.v_end.toFixed(2)} V`;
+    rec = null;
+    chg.test = { ahOut, wh, v0, rM, waiting };
+  } else if (checking) {
     soc = 0; eta = null;
     phase = 'Checking the battery – rest voltage and a short charging test';
   } else if (recovering) {
@@ -438,25 +473,35 @@ function chgLive(s) {
   b.classList.toggle('charging', running && s.output);
   b.classList.toggle('recovering', !!rec && running);
   b.classList.toggle('checking', checking);
+  b.classList.toggle('discharging', testing && running);
   b.dataset.lvl = soc < 20 ? 'low' : soc < 50 ? 'mid' : 'ok';
   $('#chgFill').style.width = soc.toFixed(1) + '%';
   // while recovering the % means little – the battery shows the rest voltage and a sweeping band instead
   $('#chgPct').textContent = checking ? '…' : rec && running ? `⚡ ${rec.rests.length ? rec.rests[rec.rests.length - 1].toFixed(2) + ' V' : '…'}` : `${Math.round(soc)} %`;
   $('#chgEta').textContent = fin ? (ok ? (c.storage ? '✓ At storage voltage' : '✓ Charged') : `Charging ${ui.scriptStatus || 'stopped'}`)
-    : eta === null ? (checking ? 'Checking the battery…' : recovering ? 'Recovering – the time depends on the battery' : 'Estimating…')
+    : eta === null ? (checking ? 'Checking the battery…' : recovering ? 'Recovering – the time depends on the battery' : testing ? (chg.test.waiting ? 'Connect the load now' : 'Discharging – estimating…') : 'Estimating…')
+    : testing ? `End voltage ≈ ${new Date((now + eta * 3600) * 1000).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} · in ${fmtDur(eta)}`
     : `Ready ≈ ${new Date((now + eta * 3600) * 1000).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} · in ${fmtDur(eta)}`;
+  const result = (L.map(l => l.match(/^Capacity ≈ (.*)/)).filter(Boolean).pop() || [])[1];
+  if (result && !L.some(l => l.startsWith('=== Charging'))) { $('#chgEta').textContent = '✓ Capacity ≈ ' + result.split(',')[0]; }
   const abort = (L.map(l => l.match(/ChargeAbort: (.*)/)).filter(Boolean).pop() || [])[1];
   if (fin && !ok && abort) $('#chgPct').textContent = '!';
   $('#chgPhase').textContent = fin ? (abort || c.name) : `${phase}${phaseNote}${c.storage ? ` · target storage ≈ ${Math.round(target)} %` : ''}`;
-  const recRows = !rec ? [] : [
+  const t = testing ? chg.test : null;
+  const testRows = !t ? [] : [
+    ['Removed', `${t.ahOut.toFixed(2)} Ah · ${t.wh.toFixed(0)} Wh (${(t.ahOut / c.cap_ah * 100).toFixed(0)} % of rated ${c.cap_ah} Ah)`],
+    ['No-load voltage', t.v0 ? `${(+t.v0).toFixed(2)} V` : '–'],
+    ['Internal resistance', t.rM ? `≈ ${(+t.rM).toFixed(3)} Ω` : '–'],
+  ];
+  const recRows = !rec ? testRows : [
     ['Rest voltage', rec.rests.length > 1 ? `${rec.rests[0].toFixed(2)} → ${rec.rests[rec.rests.length - 1].toFixed(2)} V` : rec.rests.length ? `${rec.rests[0].toFixed(2)} V` : '–'],
     ['Takes at ' + c.v_max.toFixed(2) + ' V', rec.takes === null ? '–'
       : `__BAR__${Math.min(100, rec.takes / rec.need * 100).toFixed(0)}__ ${rec.takes.toFixed(2)} A of ${rec.need.toFixed(2)} A needed`],
   ];
   $('#chgStats').innerHTML = sumTable([...recRows,
     ['Voltage / current', `${s.vout.toFixed(2)} V · ${s.iout.toFixed(3)} A`],
-    ['Charged', `${ah.toFixed(3)} Ah of ${c.cap_ah} Ah`],
-    ['Start voltage', vStart ? `${(+vStart).toFixed(2)} V (≈ ${Math.round(soc0)} %)` : '–'],
+    ...(testing ? [] : [['Charged', `${ah.toFixed(3)} Ah of ${c.cap_ah} Ah`],
+      ['Start voltage', vStart ? `${(+vStart).toFixed(2)} V (≈ ${Math.round(soc0)} %)` : '–']]),
     ['Elapsed', fmtDur(el)],
     ['Time limit left', fin ? '–' : fmtDur(left)],
   ]).replace(/^<table class="chgsum">|<\/table>$/g, '')

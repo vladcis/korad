@@ -321,6 +321,110 @@ def lead_equalize(psu, v_eq, i_eq, hours, *, interval=5.0, report_every=300, log
     return ah
 
 
+def load_current(load_a, v, v_nom, kind="bulb"):
+    """Current of an external load at voltage v, given its current load_a at v_nom:
+    bulb (filament, I ~ V^0.55), resistor (I ~ V) or constant (electronic load)."""
+    if v <= 0:
+        return 0.0
+    if kind == "resistor":
+        return load_a * v / v_nom
+    if kind == "constant":
+        return load_a
+    return load_a * (v / v_nom) ** 0.55
+
+
+def capacity_test(psu, cells, load_a, *, v_end, v_nom, v_max, load="bulb", timeout_h=48.0, interval=5.0,
+                  report_every=300, log_name=None, hold=True):
+    """Discharge capacity test with an external load (bulb, resistor, electronic load) across the battery.
+
+    The PSU cannot sink current: it stays connected with the output on and 0 A and only measures the
+    battery voltage under load. load_a is the load current at v_nom (e.g. a 21 W bulb: 1.75 A at 12 V);
+    the current at other voltages follows the load type. Ah and Wh are integrated until v_end.
+    Connect the load AFTER starting, when asked - the voltage drop confirms it and gives the internal
+    resistance. At the end the PSU takes over the load (holds v_end, hold=True) so the battery stops
+    discharging until the load is disconnected or charging starts. Returns (Ah, Wh, hours, r_int).
+    """
+    _check_limits(v_max, max(load_a * 1.5, 0.1))
+    say(psu, f"=== Capacity test: load {load_a:.2f} A at {v_nom:.1f} V ({load}), down to {v_end:.2f} V ===")
+    psu.off()
+    psu.set_i(0)
+    psu.set_v(v_max)
+    psu.on()
+    psu.wait(3)
+    v0 = psu.vout
+    if v0 < 1.0:
+        psu.off()
+        raise ChargeAbort(f"No battery on the output: {v0:.2f} V")
+    if v0 <= v_end:
+        psu.off()
+        raise ChargeAbort(f"Battery is already at {v0:.2f} V, below the end voltage {v_end:.2f} V - charge it first")
+    say(psu, f"Battery without load: {v0:.2f} V. CONNECT THE LOAD NOW (waiting up to 2 min for the voltage to drop) …")
+    t_wait = time.time()
+    v = v0
+    r_int = None
+    while time.time() - t_wait < 120:
+        psu.wait(1)
+        v = psu.vout
+        if v0 - v >= 0.03:
+            psu.wait(2)
+            v = psu.vout
+            i = load_current(load_a, v, v_nom, load)
+            r_int = (v0 - v) / i if i > 0 else None
+            say(psu, f"Load detected: {v0:.2f} → {v:.2f} V" + (f"  (internal resistance ≈ {r_int:.3f} Ω)" if r_int else ""))
+            break
+    else:
+        say(psu, "No voltage drop seen - assuming the load was connected before the start")
+    if log_name:
+        psu.log_start(log_name, interval)
+    t0 = last = time.time()
+    ah = wh = 0.0
+    last_report = 0.0
+    v_30 = None
+    try:
+        while True:
+            psu.wait(interval)
+            now = time.time()
+            v = psu.vout
+            st = psu.status()
+            if not st["output"]:
+                raise ChargeAbort("PSU output switched off - the voltage can no longer be measured")
+            i = load_current(load_a, v, v_nom, load)
+            dt = (now - last) / 3600
+            ah += i * dt
+            wh += i * v * dt
+            last = now
+            el = now - t0
+            if v <= v_end:
+                say(psu, f"[{fmt_dur(el)}] END - {v_end:.2f} V reached: {ah:.2f} Ah / {wh:.0f} Wh in {fmt_dur(el)}")
+                break
+            if el >= 1800 and v_30 is None:
+                v_30 = v
+                if (v0 - v) < 0.01:
+                    raise ChargeAbort(f"The voltage has not dropped in 30 min ({v:.2f} V) - is the load connected?")
+            if el > timeout_h * 3600:
+                say(psu, f"[{fmt_dur(el)}] time limit {timeout_h:g} h - stopping at {v:.2f} V: {ah:.2f} Ah / {wh:.0f} Wh")
+                break
+            if el - last_report >= report_every:
+                say(psu, f"[{fmt_dur(el)}] discharge  U={v:.2f} V  I≈{i:.2f} A  {ah:.2f} Ah  {wh:.0f} Wh")
+                last_report = el
+    except BaseException:
+        psu.off()
+        raise
+    finally:
+        if log_name:
+            psu.log_stop()
+    if hold:
+        # the PSU now feeds the load at the end voltage: the battery neither discharges nor charges
+        psu.set_i(min(PSU_I_MAX, max(0.1, load_current(load_a, v_end, v_nom, load) * 1.3)))
+        psu.set_v(v_end)
+        say(psu, f"The PSU is holding {v_end:.2f} V and supplying the load - disconnect the load now.")
+    else:
+        psu.off()
+    say(psu, f"Capacity ≈ {ah:.2f} Ah ({wh:.0f} Wh), {fmt_dur(time.time() - t0)}"
+             + (f", internal resistance ≈ {r_int:.3f} Ω" if r_int else ""))
+    return ah, wh, (time.time() - t0) / 3600, r_int
+
+
 def nimh_charge(psu, cells, i_charge, *, v_cell_max=1.60, dv_per_cell=0.005, blank_min=5.0, timeout_h=3.0,
                 ah_max=None, v_min_cell=0.9, interval=2.0, report_every=30, log_name=None, name="NiMH",
                 i_trickle=None, trickle_min=0):
