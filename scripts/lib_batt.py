@@ -75,6 +75,8 @@ def cccv_charge(psu, v_max, i_charge, i_term, timeout_h=8.0, *, v_min=0.0, prech
         psu.off()
         raise ChargeAbort(f"Battery voltage {v:.2f} V is below the minimum {v_min:.2f} V – check polarity, cell count or battery condition")
     say(psu, f"Battery: {v:.2f} V")
+    v_start = v
+    v_start_frac = (v - v_min) / (v_max - v_min) if v_max > v_min > 0 else 1.0   # 0 = at the minimum, 1 = at the end voltage
 
     if log_name:
         psu.log_start(log_name, interval)
@@ -115,12 +117,13 @@ def cccv_charge(psu, v_max, i_charge, i_term, timeout_h=8.0, *, v_min=0.0, prech
                 say(psu, f"[{fmt_dur(el)}] {phase} → {new_phase} at {v:.2f} V, {i:.3f} A, charged {ah:.3f} Ah")
                 phase = new_phase
             below = below + 1 if (phase == "CV" and i <= i_term) else 0
-            if below >= term_count and el < 120 and ah < max(0.005, 0.01 * (ah_max or 0)):
-                # at the end voltage at once with almost no charge: not "full" but a battery that takes no current
+            if below >= term_count and ah < max(0.01, 0.05 * (ah_max or 0)) and v_start_frac < 0.5:
+                # cut-off current reached with almost nothing charged while the rest voltage said "far from full":
+                # not a full battery but one whose internal resistance is too high to take current
                 rest = _rest_voltage(psu, i_term, 5)
-                raise ChargeAbort(f"The battery took almost no current ({ah:.3f} Ah) and was at {v_max:.2f} V at once "
-                                  f"(rest voltage {rest:.2f} V). If it is not already full, its internal resistance is "
-                                  "too high – lead-acid: sulfated / deeply discharged, use the Recovery mode; "
+                raise ChargeAbort(f"The current fell below the cut-off after only {ah:.3f} Ah, but the battery started at "
+                                  f"{v_start:.2f} V (rest now {rest:.2f} V) – it is not full, its internal resistance is "
+                                  "too high. Lead-acid: sulfated / deeply discharged – use the Recovery mode; "
                                   "other types: a damaged cell.")
             if below >= term_count:
                 say(psu, f"[{fmt_dur(el)}] DONE – current dropped below {i_term:.3f} A")
