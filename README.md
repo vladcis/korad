@@ -26,7 +26,8 @@ Charging a Li-ion cell with the `10_charge_liion.py` script: CV phase at 4.20 V,
 - **Program**: a programmable step test like in the original software. A table of U / I / time steps, start and end
   step, and a number of cycles (0 = infinite).
 - **Charge**: battery charger with a form instead of editing scripts – Li-ion (incl. Panasonic CGR18650CG and Sanyo
-  UR18650A datasheet presets), LiPo, LiHV, LiFePO4, lead-acid (AGM / gel / flooded, with float) and NiMH / NiCd.
+  UR18650A datasheet presets), LiPo, LiHV, LiFePO4, lead-acid (AGM / gel / flooded, with float, **recovery of
+  deeply discharged / sulfated batteries** and reconditioning / equalisation) and NiMH / NiCd.
   Pick the type, cell count and capacity; the summary shows the resulting voltage, current, cut-off, limits and an
   estimated charge time. Starting needs a confirmation. While charging, an animated battery shows the estimated
   state of charge in % and when the battery will be ready.

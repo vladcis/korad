@@ -267,7 +267,10 @@ function chgApplyChem() {
   opts($('#chgModel'), [['', 'Generic cell'], ...Object.entries(p.models || {}).map(([m, x]) => [m, x.label])], '');
   if (p.types) opts(k === 'lead' ? $('#chgLeadType') : $('#chgNimhType'), Object.entries(p.types).map(([t, x]) => [t, x.label]));
   opts($('#chgMode'), k === 'nimh' ? [['fast', 'Fast – −ΔV end'], ['slow', 'Slow – 0.1 C, 14 h']]
-    : [['full', `Full charge (${p.v_cell?.toFixed(2)} V/cell)`], ['storage', `Storage (${p.v_storage?.toFixed(2)} V/cell)`]], k === 'nimh' ? 'fast' : 'full');
+    : k === 'lead' ? [['normal', 'Normal charge'], ['recover', 'Recovery (deep discharge)'], ['recond', 'Recovery + reconditioning']]
+    : [['full', `Full charge (${p.v_cell?.toFixed(2)} V/cell)`], ['storage', `Storage (${p.v_storage?.toFixed(2)} V/cell)`]],
+    { nimh: 'fast', lead: 'normal' }[k] || 'full');
+  setv('#chgRecC', p.rec_c); setv('#chgEqC', p.eq_c); setv('#chgEqH', p.eq_h);
   const cs = $('#chgCellsSel'), ci = $('#chgCells');
   cs.hidden = !p.cells_choices; ci.hidden = !!p.cells_choices;
   if (p.cells_choices) opts(cs, p.cells_choices.map(c => [c, `${c * 2} V (${c} cells)`]), p.cells);
@@ -284,7 +287,11 @@ function chgApplyChem() {
 }
 function chgApplyType() {
   const k = $('#chgChem').value, p = prof();
-  if (k === 'lead') { const t = p.types[$('#chgLeadType').value]; setv('#chgVcell', t.v_cell); setv('#chgVfloat', t.v_float); }
+  if (k === 'lead') {
+    const t = p.types[$('#chgLeadType').value];
+    setv('#chgVcell', t.v_cell); setv('#chgVfloat', t.v_float); setv('#chgRecV', t.v_rec); $('#chgRecV').max = t.v_rec_max;
+    setv('#chgEqV', t.v_eq ?? ''); $('#chgEqV').max = t.v_eq_max ?? '';
+  }
 }
 function chgApplyModel() {
   const p = prof(), m = (p.models || {})[$('#chgModel').value];
@@ -298,6 +305,7 @@ function chgParams() {
   return {
     chem: $('#chgChem').value, model: $('#chgModel').value, lead_type: $('#chgLeadType').value, nimh_type: $('#chgNimhType').value,
     mode: $('#chgMode').value, cells: p.cells_choices ? +$('#chgCellsSel').value : n('#chgCells'),
+    rec_c: n('#chgRecC'), v_rec: n('#chgRecV'), eq_c: n('#chgEqC'), v_eq: n('#chgEqV'), eq_h: n('#chgEqH'),
     capacity_mah: n('#chgCap'), c_rate: n('#chgC'), cutoff_c: n('#chgCut'), v_cell: n('#chgVcell'), v_float: n('#chgVfloat'),
     float_h: n('#chgFloatH'), timeout_h: n('#chgTime'), ah_pct: n('#chgAh'), balancer: $('#chgBal').checked, log: $('#chgLog').value.trim(),
   };
@@ -317,6 +325,11 @@ function chgPreview() {
     $('#chgAhInfo').textContent = cap ? `= ${(cap * (q.ah_pct || 0) / 100).toFixed(2)} Ah` : '';
     $('#chgVInfo').textContent = q.cells && q.v_cell ? `= ${(q.cells * q.v_cell).toFixed(2)} V pack` : '';
     $('#chgBalRow').classList.toggle('need', (q.cells || 0) > 1);
+    $$('#tab-charge [data-modes]').forEach(e => { if (e.dataset.show.split(' ').includes(k)) e.hidden = !e.dataset.modes.split(' ').includes(q.mode); });
+    $('#chgRecA').textContent = cap ? `= ${(cap * (q.rec_c || 0)).toFixed(3)} A` : '';
+    $('#chgEqA').textContent = cap ? `= ${(cap * (q.eq_c || 0)).toFixed(3)} A` : '';
+    $('#chgRecVInfo').textContent = q.cells && q.v_rec ? `= ${(q.cells * q.v_rec).toFixed(2)} V` : '';
+    $('#chgEqVInfo').textContent = q.cells && q.v_eq ? `= ${(q.cells * q.v_eq).toFixed(2)} V` : '';
     try {
       const b = await api('/charge/preview', 'POST', q);
       chg.last = b; $('#chgErr').hidden = true;
@@ -347,17 +360,31 @@ function chgLive(s) {
   const running = ui.scriptRunning, L = chg.lines.map(l => l.line);
   const now = s.t || Date.now() / 1000, el = (now - c.started) / 3600;
   // start voltage ("Battery: 3.71 V") and charged Ah (last progress line, not the float stage)
-  const vStart = (L.map(l => l.match(/^Battery: ([\d.]+) V/)).find(Boolean) || [])[1];
-  const ahM = L.filter(l => l.startsWith('[') && !/float/i.test(l)).map(l => l.match(/([\d.]+) Ah/)).filter(Boolean).pop();
-  const ah = ahM ? +ahM[1] : 0;
+  // start voltage of the charge itself (after a recovery the battery is measured again)
+  const vStart = (L.map(l => l.match(/^Battery: ([\d.]+) V/)).filter(Boolean).pop()
+    || L.map(l => l.match(/^=== Recovery: ([\d.]+) V/)).find(Boolean) || [])[1];
+  const ahM = L.filter(l => l.startsWith('[') && !/float|recovery|recond/i.test(l)).map(l => l.match(/([\d.]+) Ah/)).filter(Boolean).pop();
+  let ah = ahM ? +ahM[1] : 0;
   const soc0 = vStart ? interp(c.soc.ocv, vStart / c.cells) : 0, cvAt = c.soc.cv_at;
   const target = c.storage ? interp(c.soc.ocv, c.v_cell) : 100;
   const inFloat = L.some(l => l.startsWith('=== Float'));
+  const recovering = L.some(l => l.startsWith('=== Recovery')) && !L.some(l => /RECOVERED|Recovery not needed/.test(l));
+  const recond = L.some(l => l.startsWith('=== Reconditioning')) && !inFloat;
   const pre = L.some(l => l.startsWith('Precharging')) && !L.some(l => /precharged/.test(l));
   const inCV = c.method === 'cccv' && s.output && s.mode === 'CV' && !inFloat;
   let soc = soc0 + ah * c.soc.eff / c.cap_ah * 100, eta = null, phase;
   if (c.method === 'cccv' && !inCV && !inFloat) soc = Math.min(soc, c.storage ? target - 1 : cvAt - 1);
-  if (inCV) {
+  if (recovering) {
+    const ahR = L.filter(l => / recovery /.test(l)).map(l => l.match(/([\d.]+) Ah/)).filter(Boolean).pop();
+    if (ahR) ah = +ahR[1];
+    const rest = (L.map(l => l.match(/rest ([\d.]+) V/)).filter(Boolean).pop() || [])[1];
+    soc = rest ? interp(c.soc.ocv, rest / c.cells) : soc0; eta = null;
+    phase = `Recovery – small current, rest voltage checked every 10 min${rest ? ` (last ${(+rest).toFixed(2)} V)` : ''}`;
+  } else if (recond) {
+    const r0 = chg.lines.find(l => l.line.startsWith('=== Reconditioning'));
+    eta = Math.max(0, (c.eq_h || 0) - (now - r0.t) / 3600) + (c.float_h || 0); soc = 100;
+    phase = 'Reconditioning – equalising at a raised voltage';
+  } else if (inCV) {
     chg.cv.push([now, s.iout]); while (chg.cv.length && chg.cv[0][0] < now - 900) chg.cv.shift();
     const r = Math.log(Math.max(s.iout, c.i_term) / c.i_term) / Math.log(c.i_charge / c.i_term);
     // mean of Ah counting (depends on the start estimate) and the current decay (depends on the cell)
@@ -371,6 +398,7 @@ function chgLive(s) {
       if (k < 0) eta = Math.log(Math.max(s.iout, c.i_term) / c.i_term) / -k / 3600;
     }
     if (eta === null) eta = (target - soc) / 100 * c.cap_ah / (0.4 * c.i_charge);
+    eta += (c.eq_h || 0) + (c.float_h || 0);
     phase = 'CV – topping off, the current is falling';
   } else if (inFloat) {
     const f0 = chg.lines.find(l => l.line.startsWith('=== Float'));
@@ -382,7 +410,7 @@ function chgLive(s) {
   } else {
     const I = Math.max(s.iout, 0.01);
     const toCv = Math.max(0, Math.min(cvAt, target) - soc) / 100 * c.cap_ah / (I * c.soc.eff);
-    eta = toCv + Math.max(0, target - cvAt) / 100 * c.cap_ah / (0.4 * c.i_charge) + (c.float_h || 0);
+    eta = toCv + Math.max(0, target - cvAt) / 100 * c.cap_ah / (0.4 * c.i_charge) + (c.float_h || 0) + (c.eq_h || 0);
     phase = pre ? 'Pre-charge – low current until the voltage recovers' : 'CC – constant current';
   }
   soc = Math.min(100, Math.max(0, soc));
@@ -397,7 +425,7 @@ function chgLive(s) {
   $('#chgFill').style.width = soc.toFixed(1) + '%';
   $('#chgPct').textContent = `${Math.round(soc)} %`;
   $('#chgEta').textContent = fin ? (ok ? (c.storage ? '✓ At storage voltage' : '✓ Charged') : `Charging ${ui.scriptStatus || 'stopped'}`)
-    : eta === null ? 'Estimating…'
+    : eta === null ? (recovering ? 'Recovering – the time depends on the battery' : 'Estimating…')
     : `Ready ≈ ${new Date((now + eta * 3600) * 1000).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} · in ${fmtDur(eta)}`;
   $('#chgPhase').textContent = fin ? c.name : `${phase}${c.storage ? ` · target storage ≈ ${Math.round(target)} %` : ''}`;
   $('#chgStats').innerHTML = sumTable([

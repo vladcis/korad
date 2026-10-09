@@ -1,4 +1,4 @@
-"""Library for charging batteries with a KORAD lab power supply (CC/CV, −ΔV, float charging).
+"""Library for charging batteries with a KORAD lab power supply (CC/CV, −ΔV, float, lead-acid recovery).
 
 Usage in a script:  from lib_batt import *
 
@@ -164,6 +164,115 @@ def float_stage(psu, v_float, i_max, hours, *, interval=5.0, report_every=300, l
         if log_name:
             psu.log_stop()
     say(psu, f"Float finished, delivered {ah:.3f} Ah")
+    return ah
+
+
+def _rest_voltage(psu, i_back, rest_s):
+    """Current to 0 for rest_s seconds and returns the battery rest voltage (the PSU cannot sink current)."""
+    psu.set_i(0)
+    psu.wait(rest_s)
+    v = psu.vout
+    psu.set_i(i_back)
+    return v
+
+
+def lead_recover(psu, cells, i_rec, *, v_limit_cell=2.50, v_ok_cell=1.95, check_min=10.0, rest_s=60.0,
+                 timeout_h=24.0, no_accept_h=3.0, interval=5.0, report_every=300, log_name=None):
+    """Recovery of a deeply discharged / sulfated lead-acid battery before normal charging.
+
+    Small constant current i_rec (≈ 0.02 C) with a raised voltage limit (v_limit_cell per cell). A sulfated
+    battery first takes almost no current at the limit; as the sulfate dissolves the current rises.
+    Every check_min minutes the current goes to 0 for rest_s seconds and the rest voltage is measured;
+    recovery ends when it reaches v_ok_cell per cell (then charge normally). Aborts when the battery
+    takes no current for no_accept_h hours, or after timeout_h. Returns (rest voltage, Ah).
+    """
+    v_limit, v_ok = cells * v_limit_cell, cells * v_ok_cell
+    _check_limits(v_limit, i_rec)
+    psu.off()
+    psu.set_v(v_limit)
+    psu.set_i(i_rec)
+    psu.on()
+    v0 = _rest_voltage(psu, i_rec, 5)
+    if v0 < 1.0:
+        psu.off()
+        raise ChargeAbort(f"No battery on the output (or an open cell): {v0:.2f} V")
+    if v0 >= v_ok:
+        say(psu, f"Recovery not needed – rest voltage {v0:.2f} V (≥ {v_ok:.2f} V)")
+        psu.off()
+        return v0, 0.0
+    say(psu, f"=== Recovery: {v0:.2f} V, {i_rec:.3f} A up to {v_limit:.2f} V until rest ≥ {v_ok:.2f} V ===")
+    if log_name:
+        psu.log_start(log_name, interval)
+    t0 = last = last_accept = last_check = time.time()
+    ah, last_report = 0.0, 0.0
+    try:
+        while True:
+            psu.wait(interval)
+            now = time.time()
+            v, i, st = psu.vout, psu.iout, psu.status()
+            ah += i * (now - last) / 3600
+            last = now
+            el = now - t0
+            if not st["output"]:
+                raise ChargeAbort("PSU output switched off (OCP/OVP or manually)")
+            if i >= 0.5 * i_rec:
+                last_accept = now
+            elif now - last_accept > no_accept_h * 3600:
+                raise ChargeAbort(f"The battery has taken no current for {no_accept_h:g} h at {v:.2f} V – "
+                                  "it is probably beyond recovery (heavy sulfation or a dead cell)")
+            if now - last_check >= check_min * 60:
+                rest = _rest_voltage(psu, i_rec, rest_s)
+                last_check = last = time.time()
+                say(psu, f"[{fmt_dur(el)}] recovery  rest {rest:.2f} V  (I={i:.3f} A, {ah:.3f} Ah)")
+                if rest >= v_ok:
+                    say(psu, f"[{fmt_dur(el)}] RECOVERED – rest voltage {rest:.2f} V, normal charging follows")
+                    return rest, ah
+            if el > timeout_h * 3600:
+                raise ChargeAbort(f"Recovery time limit {timeout_h:g} h – the battery did not recover")
+            if el - last_report >= report_every:
+                say(psu, f"[{fmt_dur(el)}] recovery  U={v:.2f} V  I={i:.3f} A  ({ah:.3f} Ah)")
+                last_report = el
+    finally:
+        psu.off()
+        if log_name:
+            psu.log_stop()
+
+
+def lead_equalize(psu, v_eq, i_eq, hours, *, interval=5.0, report_every=300, log_name=None):
+    """Reconditioning / equalisation after a full charge: constant current i_eq (≈ C/30) limited to v_eq
+    for the given time. Mixes the electrolyte and converts remaining sulfate. Flooded batteries;
+    AGM only occasionally and at a lower voltage; NEVER gel. The battery gasses – ventilate, and stop if
+    it gets warm. Returns the charged Ah."""
+    _check_limits(v_eq, i_eq)
+    say(psu, f"=== Reconditioning {i_eq:.3f} A up to {v_eq:.2f} V for {hours:g} h ===")
+    psu.off()
+    psu.set_v(v_eq)
+    psu.set_i(i_eq)
+    psu.on()
+    if log_name:
+        psu.log_start(log_name, interval)
+    t0 = last = time.time()
+    ah, last_report = 0.0, 0.0
+    try:
+        while True:
+            psu.wait(interval)
+            now = time.time()
+            v, i, st = psu.vout, psu.iout, psu.status()
+            ah += i * (now - last) / 3600
+            last = now
+            el = now - t0
+            if not st["output"]:
+                raise ChargeAbort("PSU output switched off (OCP/OVP or manually)")
+            if el >= hours * 3600:
+                break
+            if el - last_report >= report_every:
+                say(psu, f"[{fmt_dur(el)}] recond  U={v:.2f} V  I={i:.3f} A  ({ah:.3f} Ah)")
+                last_report = el
+    finally:
+        psu.off()
+        if log_name:
+            psu.log_stop()
+    say(psu, f"Reconditioning finished, {ah:.3f} Ah")
     return ah
 
 

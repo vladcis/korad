@@ -49,12 +49,18 @@ PROFILES = {
         "cells": 6, "cells_choices": [3, 6, 12], "capacity": 7200, "c_rate": 0.15, "c_max": 0.3, "cutoff_c": 0.02,
         "v_min": 1.75, "ah_pct": 130, "float_h": 2, "timeout_h": 16, "log": "lead_acid",
         "types": {
-            "agm": {"label": "AGM", "v_cell": 2.40, "v_float": 2.267},
-            "gel": {"label": "Gel", "v_cell": 2.35, "v_float": 2.25},
-            "flooded": {"label": "Flooded (wet)", "v_cell": 2.43, "v_float": 2.25},
+            # v_rec = recovery voltage limit, v_eq = reconditioning (equalisation) voltage, per cell
+            "agm": {"label": "AGM", "v_cell": 2.40, "v_float": 2.267, "v_rec": 2.50, "v_rec_max": 2.55,
+                    "v_eq": 2.55, "v_eq_max": 2.58},
+            "gel": {"label": "Gel", "v_cell": 2.35, "v_float": 2.25, "v_rec": 2.42, "v_rec_max": 2.45,
+                    "v_eq": None, "v_eq_max": None},
+            "flooded": {"label": "Flooded (wet)", "v_cell": 2.43, "v_float": 2.25, "v_rec": 2.55, "v_rec_max": 2.65,
+                        "v_eq": 2.62, "v_eq_max": 2.70},
         },
-        "v_range": [2.25, 2.48],
-        "hint": "Bulk (CC) → absorption (CV) → float. Below 1.75 V/cell (10.5 V for 12 V) the battery is deeply discharged.",
+        "v_range": [2.25, 2.48], "rec_c": 0.02, "eq_c": 0.03, "eq_h": 2,
+        "hint": "Bulk (CC) → absorption (CV) → float. Below 1.75 V/cell (10.5 V for 12 V) the battery is deeply "
+                "discharged – use Recovery. Reconditioning (equalisation) gasses: flooded batteries, AGM only "
+                "occasionally, never gel.",
     },
     "nimh": {
         "label": "NiMH / NiCd", "method": "nimh",
@@ -180,7 +186,18 @@ def build(p):
             v_cell = _num(p, "v_cell", typ["v_cell"], *pr["v_range"], "Absorption voltage [V/cell]")
             v_float = _num(p, "v_float", typ["v_float"], 2.15, 2.35, "Float voltage [V/cell]")
             float_h = _num(p, "float_h", pr["float_h"], 0, 48, "Float time [h]")
-            mode_label = f"{typ['label']} {cells * 2} V"
+            lead_mode = p.get("mode") if p.get("mode") in ("recover", "recond") else "normal"
+            if lead_mode != "normal":
+                rec_c = _num(p, "rec_c", pr["rec_c"], 0.005, 0.1, "Recovery current [C]")
+                v_rec = _num(p, "v_rec", typ["v_rec"], 2.30, typ["v_rec_max"], "Recovery voltage limit [V/cell]")
+            if lead_mode == "recond":
+                if not typ["v_eq"]:
+                    raise ChargeError("Gel batteries must not be reconditioned (equalised) – the high voltage destroys them")
+                eq_c = _num(p, "eq_c", pr["eq_c"], 0.01, 0.1, "Reconditioning current [C]")
+                v_eq = _num(p, "v_eq", typ["v_eq"], 2.45, typ["v_eq_max"], "Reconditioning voltage [V/cell]")
+                eq_h = _num(p, "eq_h", pr["eq_h"], 0.5, 8, "Reconditioning time [h]")
+            mode_label = f"{typ['label']} {cells * 2} V" + {"normal": "", "recover": " recovery",
+                                                            "recond": " recovery + reconditioning"}[lead_mode]
         else:
             storage = p.get("mode") == "storage" and pr.get("v_storage")
             if storage:
@@ -225,11 +242,33 @@ def build(p):
                    "v_cell": v_cell, "storage": bool(storage)}
         if pr["method"] == "lead":
             est += float_h
-            targets["float_h"] = float_h
-            code = _code("cccv_charge", "psu", kw, extra="cccv_charge, float_stage")
+            targets.update(float_h=float_h, lead_mode=lead_mode)
+            sub = lambda name: f"{log}_{name}" if log else None   # noqa: E731
+            pre, post = "", ""
+            if lead_mode != "normal":
+                i_rec = _r(max(0.02, min(PSU_I_MAX, cap * rec_c)))
+                pre = (f"# recovery: small current, rest voltage checked every 10 min (skipped if not needed)\n"
+                       f"lead_recover(psu, {cells}, {i_rec!r}, v_limit_cell={v_rec!r}, v_ok_cell=1.95, "
+                       f"log_name={sub('recovery')!r})\n\n")
+                summary.insert(1, ["Recovery", f"{i_rec:.3f} A up to {cells * v_rec:.2f} V until the rest voltage "
+                                                f"≥ {cells * 1.95:.2f} V (skipped if already there; max 24 h, "
+                                                f"aborts if no current is taken for 3 h)"])
+                warn.append("Recovery time depends on the battery (hours, up to 24 h) – not included in the estimate")
+            if lead_mode == "recond":
+                i_eq = _r(max(0.02, min(PSU_I_MAX, cap * eq_c)))
+                post = (f"lead_equalize(psu, {_r(cells * v_eq, 2)!r}, {i_eq!r}, {eq_h!r}, "
+                        f"log_name={sub('recond')!r})\n")
+                summary.append(["Reconditioning", f"{i_eq:.3f} A up to {cells * v_eq:.2f} V for {eq_h:g} h"])
+                est += eq_h
+                targets["eq_h"] = eq_h
+                warn.append("Reconditioning gasses: ventilate, keep sparks away, stop if the battery gets warm; "
+                            "flooded – check the electrolyte level afterwards")
+            imports = ["cccv_charge", "float_stage"] + (["lead_recover"] if pre else []) + (["lead_equalize"] if post else [])
+            code = _code("cccv_charge", "psu", kw, extra=", ".join(imports))
+            code = code.replace("\ncccv_charge(", "\n" + pre + "cccv_charge(", 1) + post
             if float_h > 0:
                 code += (f"float_stage(psu, {_r(cells * v_float, 2)!r}, {kw['i_charge']!r}, {float_h!r}, "
-                         f"log_name={(log + '_float') if log else None!r})\n")
+                         f"log_name={sub('float')!r})\n")
                 summary.append(["Float", f"{cells * v_float:.2f} V for {float_h:g} h"])
         else:
             code = _code("cccv_charge", "psu", kw)
@@ -239,7 +278,8 @@ def build(p):
     summary.append(["Estimated time", f"≈ {_dur(est)} from empty (less if partly charged)"])
     targets.update(cap_ah=_r(cap, 3), timeout_h=timeout, est_h=_r(est, 2), chem=chem, cells=cells, soc=SOC[chem])
     summary += [
-        ["Start only above", f"{_r(cells * pr['v_min'], 2):.2f} V" if pr.get("v_min") else "0.9 V/cell"],
+        ["Start only above", "any voltage – recovery first" if targets.get("lead_mode", "normal") != "normal"
+         else f"{_r(cells * pr['v_min'], 2):.2f} V" if pr.get("v_min") else "0.9 V/cell"],
         ["Time limit", f"{timeout:g} h"],
         ["Capacity limit", f"{ah_max:g} Ah ({ah_pct:g} %)"],
         ["CSV log", log or "off"],

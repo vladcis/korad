@@ -219,7 +219,7 @@
     <label class="fld" data-show="liion">Cell model <select id="chgModel"></select></label>
     <label class="fld" data-show="lead">Lead-acid type <select id="chgLeadType"></select></label>
     <label class="fld" data-show="nimh">Chemistry <select id="chgNimhType"></select></label>
-    <label class="fld" data-show="lipo lihv nimh">Mode <select id="chgMode"></select></label>
+    <label class="fld" data-show="lipo lihv nimh lead">Mode <select id="chgMode"></select></label>
     <label class="fld">Cells in series <span class="fldv"><input id="chgCells" type="number" min="1" step="1"><select id="chgCellsSel"></select><small id="chgCellsInfo" class="muted"></small></span></label>
     <label class="fld">Capacity <span class="fldv"><input id="chgCap" type="number" min="10" step="50"> mAh <small id="chgCapInfo" class="muted"></small></span></label>
     <h3>Charging</h3>
@@ -227,6 +227,11 @@
     <label class="fld" data-hide="nimh">End voltage <span class="fldv"><input id="chgVcell" type="number" step="0.01"> V/cell <small id="chgVInfo" class="muted"></small></span></label>
     <label class="fld" data-show="lead">Float voltage <span class="fldv"><input id="chgVfloat" type="number" step="0.01" min="2.15" max="2.35"> V/cell</span></label>
     <label class="fld" data-show="lead">Float time <span class="fldv"><input id="chgFloatH" type="number" min="0" step="0.5"> h <small class="muted">0 = no float</small></span></label>
+    <label class="fld" data-show="lead" data-modes="recover recond">Recovery current <span class="fldv"><input id="chgRecC" type="number" min="0.005" max="0.1" step="0.005"> C <small id="chgRecA" class="muted"></small></span></label>
+    <label class="fld" data-show="lead" data-modes="recover recond">Recovery limit <span class="fldv"><input id="chgRecV" type="number" step="0.01"> V/cell <small id="chgRecVInfo" class="muted"></small></span></label>
+    <label class="fld" data-show="lead" data-modes="recond">Recond. current <span class="fldv"><input id="chgEqC" type="number" min="0.01" max="0.1" step="0.005"> C <small id="chgEqA" class="muted"></small></span></label>
+    <label class="fld" data-show="lead" data-modes="recond">Recond. voltage <span class="fldv"><input id="chgEqV" type="number" step="0.01"> V/cell <small id="chgEqVInfo" class="muted"></small></span></label>
+    <label class="fld" data-show="lead" data-modes="recond">Recond. time <span class="fldv"><input id="chgEqH" type="number" min="0.5" max="8" step="0.5"> h</span></label>
     <label class="fld" data-hide="nimh">Cut-off current <span class="fldv"><input id="chgCut" type="number" min="0.005" step="0.005"> C <small id="chgCutA" class="muted"></small></span></label>
     <h3>Safety</h3>
     <label class="fld">Time limit <span class="fldv"><input id="chgTime" type="number" min="0.1" step="0.5" placeholder="auto"> h</span></label>
