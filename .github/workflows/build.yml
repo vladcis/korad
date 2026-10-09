@@ -77,7 +77,8 @@ jobs:
           KORAD_HOME=/tmp/kd korad --server --port 8592 --no-autoconnect >/tmp/s.log 2>&1 &
           sleep 6
           curl -sf http://127.0.0.1:8592/api/scripts | grep -q lib_batt || { cat /tmp/s.log; echo "::error title=deb server::$(tail -20 /tmp/s.log | awk '{printf "%s%%0A", $0}')"; exit 1; }
-          KORAD_HOME=/tmp/kd xvfb-run -a timeout 30 korad --no-autoconnect >/tmp/g.log 2>&1 || true
+          # own data folder: with the same one the single-instance guard would just open the server above
+          KORAD_HOME=/tmp/kd-gui xvfb-run -a timeout 30 korad --no-autoconnect >/tmp/g.log 2>&1 || true
           sh packaging/linux/check_window.sh /tmp/g.log deb
       - uses: actions/upload-artifact@v4
         with:
