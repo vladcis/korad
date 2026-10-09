@@ -427,7 +427,9 @@ function chgLive(s) {
   $('#chgEta').textContent = fin ? (ok ? (c.storage ? '✓ At storage voltage' : '✓ Charged') : `Charging ${ui.scriptStatus || 'stopped'}`)
     : eta === null ? (recovering ? 'Recovering – the time depends on the battery' : 'Estimating…')
     : `Ready ≈ ${new Date((now + eta * 3600) * 1000).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} · in ${fmtDur(eta)}`;
-  $('#chgPhase').textContent = fin ? c.name : `${phase}${c.storage ? ` · target storage ≈ ${Math.round(target)} %` : ''}`;
+  const abort = (L.map(l => l.match(/ChargeAbort: (.*)/)).filter(Boolean).pop() || [])[1];
+  if (fin && !ok && abort) $('#chgPct').textContent = '!';
+  $('#chgPhase').textContent = fin ? (abort || c.name) : `${phase}${c.storage ? ` · target storage ≈ ${Math.round(target)} %` : ''}`;
   $('#chgStats').innerHTML = sumTable([
     ['Voltage / current', `${s.vout.toFixed(2)} V · ${s.iout.toFixed(3)} A`],
     ['Charged', `${ah.toFixed(3)} Ah of ${c.cap_ah} Ah`],
