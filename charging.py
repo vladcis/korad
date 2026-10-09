@@ -56,9 +56,11 @@ PROFILES = {
                     "v_eq": None, "v_eq_max": None},
             "flooded": {"label": "Flooded (wet)", "v_cell": 2.43, "v_float": 2.25, "v_rec": 2.55, "v_rec_max": 2.65,
                         "v_eq": 2.62, "v_eq_max": 2.70},
+            "caca": {"label": "Calcium Ca/Ca (car, maintenance-free)", "v_cell": 2.47, "v_float": 2.27, "v_rec": 2.55,
+                     "v_rec_max": 2.65, "v_eq": 2.63, "v_eq_max": 2.70},
         },
-        "v_range": [2.25, 2.48], "rec_c": 0.02, "eq_c": 0.03, "eq_h": 2,
-        "hint": "Bulk (CC) → absorption (CV) → float. Below 1.75 V/cell (10.5 V for 12 V) the battery is deeply "
+        "v_range": [2.25, 2.50], "rec_c": 0.02, "eq_c": 0.03, "eq_h": 2,
+        "hint": "Bulk (CC) → absorption (CV) → float. Car batteries are usually Ca/Ca (14.8 V). Below 1.75 V/cell (10.5 V for 12 V) the battery is deeply "
                 "discharged – use Recovery. Reconditioning (equalisation) gasses: flooded batteries, AGM only "
                 "occasionally, never gel.",
     },
@@ -217,6 +219,9 @@ def build(p):
         i_term = max(0.01, cap * cutoff_c)
         if i_term >= i_charge:
             raise ChargeError("Cut-off current must be lower than the charge current")
+        if not timeout and pr["method"] == "lead":
+            # current-limited big batteries (e.g. 72 Ah at 5 A) need longer than the default 16 h
+            timeout = max(pr["timeout_h"], round(1.3 * 1.5 * cap / i_charge))
         timeout = timeout or pr.get("timeout_h") or max(2.0, _r(1.5 / (i_charge / cap) + 1, 1))
         v_min = _r(cells * pr["v_min"], 2)
         label = PROFILES[chem]["label"].split(" (")[0]
@@ -247,12 +252,14 @@ def build(p):
             pre, post = "", ""
             if lead_mode != "normal":
                 i_rec = _r(max(0.02, min(PSU_I_MAX, cap * rec_c)))
-                pre = (f"# recovery: small current, rest voltage checked every 10 min (skipped if not needed)\n"
-                       f"lead_recover(psu, {cells}, {i_rec!r}, v_limit_cell={v_rec!r}, v_ok_cell=1.95, "
-                       f"log_name={sub('recovery')!r})\n\n")
-                summary.insert(1, ["Recovery", f"{i_rec:.3f} A up to {cells * v_rec:.2f} V until the rest voltage "
-                                                f"≥ {cells * 1.95:.2f} V (skipped if already there; max 24 h, "
-                                                f"aborts if no current is taken for 3 h)"])
+                pre = (f"# recovery decides itself: 'ok' -> normal charging, 'full' -> skip charging,\n"
+                       f"# otherwise small current until the battery recovers (rest voltage + charging test every 10 min)\n"
+                       f"state = lead_recover(psu, {cells}, {i_rec!r}, v_charge={v_max!r}, i_charge={kw['i_charge']!r}, "
+                       f"v_limit_cell={v_rec!r}, v_ok_cell=1.80, log_name={sub('recovery')!r})\n\n")
+                summary.insert(1, ["Recovery", f"first a check: rest voltage ≥ {cells * 1.80:.2f} V and it takes current at "
+                                                f"{v_max:.2f} V → normal charging; full → charging skipped; otherwise "
+                                                f"{i_rec:.3f} A up to {cells * v_rec:.2f} V until it recovers "
+                                                f"(max 24 h, aborts if no current is taken for 3 h)"])
                 warn.append("Recovery time depends on the battery (hours, up to 24 h) – not included in the estimate")
             if lead_mode == "recond":
                 i_eq = _r(max(0.02, min(PSU_I_MAX, cap * eq_c)))
@@ -265,7 +272,11 @@ def build(p):
                             "flooded – check the electrolyte level afterwards")
             imports = ["cccv_charge", "float_stage"] + (["lead_recover"] if pre else []) + (["lead_equalize"] if post else [])
             code = _code("cccv_charge", "psu", kw, extra=", ".join(imports))
-            code = code.replace("\ncccv_charge(", "\n" + pre + "cccv_charge(", 1) + post
+            if pre:   # charge only when the battery is not already full
+                head, call = code.split("\ncccv_charge(", 1)
+                call = "cccv_charge(" + call
+                code = head + "\n" + pre + 'if state != "full":\n' + "".join("    " + l + "\n" for l in call.rstrip("\n").split("\n"))
+            code += post
             if float_h > 0:
                 code += (f"float_stage(psu, {_r(cells * v_float, 2)!r}, {kw['i_charge']!r}, {float_h!r}, "
                          f"log_name={sub('float')!r})\n")

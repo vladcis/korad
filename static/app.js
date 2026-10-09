@@ -368,7 +368,7 @@ function chgLive(s) {
   const soc0 = vStart ? interp(c.soc.ocv, vStart / c.cells) : 0, cvAt = c.soc.cv_at;
   const target = c.storage ? interp(c.soc.ocv, c.v_cell) : 100;
   const inFloat = L.some(l => l.startsWith('=== Float'));
-  const recovering = L.some(l => l.startsWith('=== Recovery')) && !L.some(l => /RECOVERED|Recovery not needed/.test(l));
+  const recovering = L.some(l => l.startsWith('=== Recovery')) && !L.some(l => /RECOVERED|Battery OK|Battery is full/.test(l));
   const recond = L.some(l => l.startsWith('=== Reconditioning')) && !inFloat;
   const pre = L.some(l => l.startsWith('Precharging')) && !L.some(l => /precharged/.test(l));
   const inCV = c.method === 'cccv' && s.output && s.mode === 'CV' && !inFloat;
