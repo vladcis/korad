@@ -118,13 +118,18 @@ def cccv_charge(psu, v_max, i_charge, i_term, timeout_h=8.0, *, v_min=0.0, prech
                 phase = new_phase
             below = below + 1 if (phase == "CV" and i <= i_term) else 0
             if below >= term_count and ah < max(0.01, 0.05 * (ah_max or 0)) and v_start_frac < 0.5:
-                # cut-off current reached with almost nothing charged while the rest voltage said "far from full":
-                # not a full battery but one whose internal resistance is too high to take current
+                # cut-off current reached with almost nothing charged while the rest voltage said "not full":
+                # the battery cannot take current at the end voltage (high internal resistance)
                 rest = _rest_voltage(psu, i_term, 5)
-                raise ChargeAbort(f"The current fell below the cut-off after only {ah:.3f} Ah, but the battery started at "
-                                  f"{v_start:.2f} V (rest now {rest:.2f} V) – it is not full, its internal resistance is "
-                                  "too high. Lead-acid: sulfated / deeply discharged – use the Recovery mode; "
-                                  "other types: a damaged cell.")
+                hint = ("the cut-off current is probably too high for what is left of this battery – enter its real "
+                        "(lower) capacity or a lower cut-off and charge again")
+                if v_start_frac < 0.3:
+                    raise ChargeAbort(f"The current fell below the cut-off after only {ah:.3f} Ah, but the battery started at "
+                                      f"{v_start:.2f} V (rest now {rest:.2f} V) – it is not full, its internal resistance is "
+                                      "too high. Lead-acid: sulfated / deeply discharged – use the Recovery mode; "
+                                      "other types: a damaged cell.")
+                say(psu, f"[{fmt_dur(el)}] WARNING – cut-off reached after only {ah:.3f} Ah (rest {rest:.2f} V); {hint}")
+                break
             if below >= term_count:
                 say(psu, f"[{fmt_dur(el)}] DONE – current dropped below {i_term:.3f} A")
                 break

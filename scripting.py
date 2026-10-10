@@ -256,10 +256,14 @@ class ScriptRunner:
             self.status = "stopped"
             self.emit("--- script stopped ---")
             self._safe_off(psu)
-        except Exception:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
             self.status = "error"
-            self.error = traceback.format_exc(limit=-3)
-            self.emit("ERROR:\n" + self.error)
+            if type(e).__name__ == "ChargeAbort":      # a deliberate, explained stop from lib_batt: no traceback
+                self.error = f"ChargeAbort: {e}"
+                self.emit("ERROR: " + self.error)
+            else:
+                self.error = traceback.format_exc(limit=-3)
+                self.emit("ERROR:\n" + self.error)
             self._safe_off(psu)
         finally:
             self.ctl.events.add(f"Script '{self.name}' – {self.status}")
