@@ -103,6 +103,7 @@ def cccv_charge(psu, v_max, i_charge, i_term, timeout_h=8.0, *, v_min=0.0, prech
         phase = "CC"
         below = 0
         last_report = 0.0
+        r_said = False
         while True:
             psu.wait(interval)
             now = time.time()
@@ -112,6 +113,15 @@ def cccv_charge(psu, v_max, i_charge, i_term, timeout_h=8.0, *, v_min=0.0, prech
             el = now - t0
             if not st["output"]:
                 raise ChargeAbort("PSU output switched off (OCP/OVP or manually)")
+            if not r_said and el >= 10:
+                # resistance seen by the PSU = battery + cables + clamps; a high value is usually the leads
+                r_said = True
+                r = (v - v_start) / i if i > 0.05 else None
+                if r is not None:
+                    note = ""
+                    if r > 0.5:
+                        note = " – HIGH: check cables, clamps and terminals first (a 1 Ω clamp looks like a sulfated battery)"
+                    say(psu, f"Resistance incl. leads ≈ {r:.2f} Ω ({v:.2f} V at {i:.2f} A){note}")
             new_phase = "CV" if st["cv"] else "CC"
             if new_phase != phase:
                 say(psu, f"[{fmt_dur(el)}] {phase} → {new_phase} at {v:.2f} V, {i:.3f} A, charged {ah:.3f} Ah")
@@ -253,6 +263,9 @@ def lead_recover(psu, cells, i_rec, *, v_charge, i_charge, i_term, v_limit_cell=
         return "ok"
     why = "deeply discharged" if v0 < v_ok else f"takes only {i0:.3f} A at {v_charge:.2f} V (high resistance / sulfated)"
     say(psu, f"=== Recovery: {v0:.2f} V, {why}; {i_rec:.3f} A up to {v_limit:.2f} V ===")
+    if i0 > 0.05 and (v_charge - v0) / i0 > 0.5:
+        say(psu, f"Resistance incl. leads ≈ {(v_charge - v0) / i0:.2f} Ω – HIGH: before blaming the battery check cables, "
+                 "clamps and terminals (a 1 Ω clamp looks exactly like a sulfated battery)")
     if log_name:
         psu.log_start(log_name, interval)
     t0 = last = last_accept = last_check = time.time()

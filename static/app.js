@@ -769,6 +769,12 @@ function onScriptEvent(d, initial) {
   $('#scrRun').disabled = running; $('#scrStop').disabled = !running;
   led('ledSCR', running, true);
   ui.scriptRunning = running; ui.scriptName = d.name || ui.scriptName; ui.scriptStatus = d.status;
+  // a charge started elsewhere (another window, the API): fetch its targets so the live panel shows it here too
+  if (running && (d.name || '').startsWith('charge:') && !(chg.cur && 'charge:' + chg.cur.name === d.name) && !chg.fetching) {
+    chg.fetching = true;
+    api('/state').then(j => { chg.cur = j.charge; chg.lines = (j.script.output || []).slice(); if (ui.lastState) chgLive(ui.lastState); })
+      .catch(() => {}).finally(() => { chg.fetching = false; });
+  }
   $('#scriptLockName').textContent = d.name || ''; applyLocks();
   const isSeq = (d.name || '').startsWith('program:');
   const sp = $('#seqStatus'); sp.textContent = isSeq ? d.status : 'idle'; sp.className = 'pill ' + (isSeq ? d.status : '');
